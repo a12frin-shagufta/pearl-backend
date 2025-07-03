@@ -1,0 +1,41 @@
+# Node.js
+node_modules/
+.env
+.env.local
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# React/Vite (Frontend)
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/.DS_Store
+
+# Admin Panel (if separate)
+admin/node_modules/
+admin/dist/
+admin/build/
+admin/.env
+
+# Backend
+backend/node_modules/
+backend/.env
+backend/uploads/
+backend/logs/
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
