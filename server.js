@@ -7,6 +7,8 @@ import adminRouter from './routes/adminRoute.js';
 import offerRouter from './routes/offerRoute.js';
 import productRouter from './routes/productRoute.js';
 import contactRouter from './routes/contactRoute.js'
+import categoryRouter from './routes/categoryRoute.js';
+
 
 // App config
 const app = express();
@@ -25,6 +27,9 @@ app.use('/api/user',adminRouter)
 app.use('/api/offer',offerRouter)
 app.use('/api/product', productRouter);
 app.use('/api/contact',contactRouter)
+app.use("/api/category", categoryRouter);
+
+
 
 app.get('/',(req,res) => {
 res.send("API Working")
