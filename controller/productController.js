@@ -4,7 +4,7 @@ import productModel from "../models/productModel.js";
 // Add new product
 const addProduct = async (req, res) => {
   try {
-    const { name, price, category, stock, bestseller, details } = req.body;
+    const { name, price, category, stock, bestseller, details, description, size } = req.body;
 
     const images = [
       req.files?.image1?.[0],
@@ -31,6 +31,8 @@ const addProduct = async (req, res) => {
       stock,
       bestseller: bestseller === "true",
       details,
+      description: description || undefined, // Handle optional description
+      size,
       image: imageUrls,
     });
 

@@ -37,6 +37,14 @@ const productSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    description: {
+      type: String,
+      trim: true, // Optional, no required validator
+    },
+    size: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,
