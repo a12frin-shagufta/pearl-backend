@@ -9,4 +9,4 @@ const upload = multer({ storage });
 
 productRouter.post("/add", verifyAdminToken, upload.any(), addProduct);
 
-export default router;
+export default productRouter;
