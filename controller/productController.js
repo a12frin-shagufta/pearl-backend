@@ -5,7 +5,7 @@ import productModel from "../models/productModel.js";
   try {
     const {
       name, price, category, stock, bestseller,
-      description, size, colors
+      description, size, colors , details
     } = req.body;
 
     const colorArray = JSON.parse(colors); // parse stringified array
@@ -31,6 +31,7 @@ import productModel from "../models/productModel.js";
       stock,
       bestseller: bestseller === "true",
       description,
+      details,
       size,
       variants,
     });

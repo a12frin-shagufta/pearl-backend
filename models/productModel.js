@@ -13,6 +13,12 @@ const productSchema = new mongoose.Schema(
     stock: { type: Number, required: true },
     bestseller: { type: Boolean, default: false },
     description: { type: String },
+    details: {
+  type: String,
+  required: true,
+  trim: true,
+},
+
     size: { type: String },
     variants: [variantSchema],
   },
