@@ -1,52 +1,27 @@
 import { v2 as cloudinary } from "cloudinary";
 import productModel from "../models/productModel.js";
 
-// Add new product
-
-
-// Add new product with color variants and images
-const addProduct = async (req, res) => {
+ const addProduct = async (req, res) => {
   try {
     const {
-      name,
-      price,
-      category,
-      stock,
-      bestseller,
-      details,
-      description,
-      size,
+      name, price, category, stock, bestseller,
+      description, size, colors
     } = req.body;
 
-    // Parse colors array (sent as JSON string from frontend)
-    const colors = req.body.colors ? JSON.parse(req.body.colors) : [];
+    const colorArray = JSON.parse(colors); // parse stringified array
+    const files = req.files || [];
 
-    if (!name || !price || !category || !stock || !details || colors.length === 0) {
-      return res.status(400).json({ success: false, message: "Missing required fields." });
+    if (colorArray.length !== files.length) {
+      return res.status(400).json({ success: false, message: "Color count and image count must match." });
     }
 
-    const images = [
-      req.files?.image1?.[0],
-      req.files?.image2?.[0],
-      req.files?.image3?.[0],
-      req.files?.image4?.[0],
-    ].filter(Boolean);
-
-    if (colors.length > images.length) {
-      return res.status(400).json({ success: false, message: "One image per color is required." });
-    }
-
-    // Upload all images to Cloudinary
-    const uploadedImages = await Promise.all(
-      images.map((file) =>
-        cloudinary.uploader.upload(file.path, { resource_type: "image" })
-      )
+    const uploads = await Promise.all(
+      files.map(file => cloudinary.uploader.upload(file.path, { resource_type: "image" }))
     );
 
-    // Build variant array
-    const variants = colors.map((color, index) => ({
+    const variants = colorArray.map((color, i) => ({
       color,
-      images: [uploadedImages[index].secure_url],
+      images: [uploads[i].secure_url],
     }));
 
     const newProduct = new productModel({
@@ -55,21 +30,16 @@ const addProduct = async (req, res) => {
       category,
       stock,
       bestseller: bestseller === "true",
-      details,
-      description: description || undefined,
+      description,
       size,
       variants,
     });
 
     await newProduct.save();
-
-    res.status(201).json({
-      success: true,
-      message: "Product added successfully with variants.",
-    });
-  } catch (error) {
-    console.error("Error in addProduct:", error);
-    res.status(500).json({ success: false, message: "Failed to add product." });
+    res.status(201).json({ success: true, message: "Product added successfully." });
+  } catch (err) {
+    console.error("Error in addProduct:", err);
+    res.status(500).json({ success: false, message: "Server error while adding product." });
   }
 };
 
