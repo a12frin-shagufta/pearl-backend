@@ -8,6 +8,7 @@ import offerRouter from './routes/offerRoute.js';
 import productRouter from './routes/productRoute.js';
 import contactRouter from './routes/contactRoute.js';
 import categoryRouter from './routes/categoryRoute.js';
+import orderRouter from './routes/orderRoute.js';
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -38,6 +39,7 @@ app.use('/api/offer', offerRouter);
 app.use('/api/product', productRouter);
 app.use('/api/contact', contactRouter);
 app.use('/api/category', categoryRouter);
+app.use('/api/order',orderRouter)
 
 // ✅ Test route
 app.get('/', (req, res) => {

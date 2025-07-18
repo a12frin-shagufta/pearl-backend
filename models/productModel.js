@@ -32,6 +32,16 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    colors: {
+      type: [String], // e.g., ['Silver', 'Gold', 'Rose Gold']
+      default: [],
+    },
+    colorStock: {
+      type: Map,
+      of: Number, // e.g., { Silver: 5, Gold: 2 }
+      default: {},
+    },
+
     details: {
       type: String,
       required: true,
@@ -51,5 +61,6 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-const productModel = mongoose.models.product || mongoose.model("product", productSchema);
+const productModel =
+  mongoose.models.product || mongoose.model("product", productSchema);
 export default productModel;
