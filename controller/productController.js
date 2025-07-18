@@ -2,9 +2,28 @@ import { v2 as cloudinary } from "cloudinary";
 import productModel from "../models/productModel.js";
 
 // Add new product
+
+
+// Add new product with color variants and images
 const addProduct = async (req, res) => {
   try {
-    const { name, price, category, stock, bestseller, details, description, size } = req.body;
+    const {
+      name,
+      price,
+      category,
+      stock,
+      bestseller,
+      details,
+      description,
+      size,
+    } = req.body;
+
+    // Parse colors array (sent as JSON string from frontend)
+    const colors = req.body.colors ? JSON.parse(req.body.colors) : [];
+
+    if (!name || !price || !category || !stock || !details || colors.length === 0) {
+      return res.status(400).json({ success: false, message: "Missing required fields." });
+    }
 
     const images = [
       req.files?.image1?.[0],
@@ -13,16 +32,22 @@ const addProduct = async (req, res) => {
       req.files?.image4?.[0],
     ].filter(Boolean);
 
-    if (!images.length) {
-      return res.status(400).json({ success: false, message: "At least one image is required." });
+    if (colors.length > images.length) {
+      return res.status(400).json({ success: false, message: "One image per color is required." });
     }
 
-    // Upload to Cloudinary
+    // Upload all images to Cloudinary
     const uploadedImages = await Promise.all(
-      images.map((file) => cloudinary.uploader.upload(file.path, { resource_type: "image" }))
+      images.map((file) =>
+        cloudinary.uploader.upload(file.path, { resource_type: "image" })
+      )
     );
 
-    const imageUrls = uploadedImages.map((img) => img.secure_url);
+    // Build variant array
+    const variants = colors.map((color, index) => ({
+      color,
+      images: [uploadedImages[index].secure_url],
+    }));
 
     const newProduct = new productModel({
       name,
@@ -31,20 +56,25 @@ const addProduct = async (req, res) => {
       stock,
       bestseller: bestseller === "true",
       details,
-      description: description || undefined, // Handle optional description
+      description: description || undefined,
       size,
-      image: imageUrls,
+      variants,
     });
 
     await newProduct.save();
 
-    res.status(201).json({ success: true, message: "Product added successfully." });
-
+    res.status(201).json({
+      success: true,
+      message: "Product added successfully with variants.",
+    });
   } catch (error) {
     console.error("Error in addProduct:", error);
     res.status(500).json({ success: false, message: "Failed to add product." });
   }
 };
+
+
+
 
 // Get all products
 const listProduct = async (req, res) => {

@@ -1,5 +1,18 @@
 import mongoose from "mongoose";
 
+const variantSchema = new mongoose.Schema({
+  color: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  images: {
+    type: [String], // Array of image URLs
+    required: true,
+    validate: (val) => Array.isArray(val) && val.length > 0,
+  },
+});
+
 const productSchema = new mongoose.Schema(
   {
     name: {
@@ -11,11 +24,6 @@ const productSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
-    },
-    image: {
-      type: [String],
-      required: true,
-      validate: (val) => Array.isArray(val) && val.length > 0,
     },
     category: {
       type: String,
@@ -32,16 +40,6 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    colors: {
-      type: [String], // e.g., ['Silver', 'Gold', 'Rose Gold']
-      default: [],
-    },
-    colorStock: {
-      type: Map,
-      of: Number, // e.g., { Silver: 5, Gold: 2 }
-      default: {},
-    },
-
     details: {
       type: String,
       required: true,
@@ -49,11 +47,17 @@ const productSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      trim: true, // Optional, no required validator
+      trim: true,
     },
     size: {
       type: String,
       trim: true,
+    },
+
+    // 👇 NEW VARIANTS FIELD
+    variants: {
+      type: [variantSchema],
+      default: [],
     },
   },
   {
