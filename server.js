@@ -11,7 +11,7 @@ import categoryRouter from './routes/categoryRoute.js';
 
 
 const app = express();
-const port = process.env.PORT || 4000;
+const port = process.env.PORT || 5000;
 
 // ✅ Setup allowed origins from .env
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
