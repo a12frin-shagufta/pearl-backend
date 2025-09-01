@@ -9,11 +9,15 @@ const categorySchema = new mongoose.Schema(
       lowercase: true,
       unique: true,
     },
+    subcategories: {
+      type: [String],   // <-- add subcategories
+      default: [],      // <-- always an array
+    },
   },
   {
     timestamps: true,
   }
 );
 
-const categoryModel = mongoose.models.category || mongoose.model("category", categorySchema);
+const categoryModel = mongoose.models.Category || mongoose.model("Category", categorySchema);
 export default categoryModel;

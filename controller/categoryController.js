@@ -23,6 +23,33 @@ const addCategory = async (req, res) => {
   }
 };
 
+const addSubcategory = async (req, res) => {
+  try {
+    const { categoryName, subcategory } = req.body;
+
+    if (!categoryName || !subcategory) {
+      return res.status(400).json({ success: false, message: "Category and subcategory are required." });
+    }
+
+    const category = await categoryModel.findOne({ name: categoryName.toLowerCase() });
+    if (!category) {
+      return res.status(404).json({ success: false, message: "Category not found." });
+    }
+
+    if (category.subcategories.includes(subcategory.toLowerCase())) {
+      return res.status(400).json({ success: false, message: "Subcategory already exists." });
+    }
+
+    category.subcategories.push(subcategory.toLowerCase());
+    await category.save();
+
+    res.status(200).json({ success: true, message: "Subcategory added successfully.", category });
+  } catch (error) {
+    console.error("Error in addSubcategory:", error);
+    res.status(500).json({ success: false, message: "Failed to add subcategory." });
+  }
+};
+
 // Get all categories
 const listCategories = async (req, res) => {
   try {
@@ -34,4 +61,4 @@ const listCategories = async (req, res) => {
   }
 };
 
-export { addCategory, listCategories };
+export { addCategory, listCategories , addSubcategory };
