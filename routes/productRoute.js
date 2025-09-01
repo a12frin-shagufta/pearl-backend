@@ -5,6 +5,7 @@ import {
   listProduct,
   removeProduct,
   singleProduct,
+  updateProduct
 } from "../controller/productController.js";
 import verifyAdminToken from "../middleware/verifyAdminToken.js";
 
@@ -23,5 +24,7 @@ productRouter.post("/single", singleProduct);
 
 // ✅ Route to delete a product
 productRouter.post("/remove", verifyAdminToken, removeProduct);
+// ✅ Route to update a product
+productRouter.post("/update", verifyAdminToken, upload.any(), updateProduct);
 
 export default productRouter;
