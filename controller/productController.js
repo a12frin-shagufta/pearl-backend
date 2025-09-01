@@ -90,4 +90,37 @@ const singleProduct = async (req, res) => {
   }
 };
 
-export { addProduct, listProduct, removeProduct, singleProduct };
+const updateProduct = async (req, res) => {
+  try {
+    const { id, name, price, category, subcategory, stock, bestseller, description, details } = req.body;
+
+    if (!id) return res.status(400).json({ success: false, message: "Product ID required" });
+
+    const updatedProduct = await productModel.findByIdAndUpdate(
+      id,
+      {
+        name,
+        price,
+        category,
+        subcategory,
+        stock,
+        bestseller,
+        description,
+        details: details ? JSON.parse(details) : [],
+      },
+      { new: true }
+    );
+
+    if (!updatedProduct) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    res.status(200).json({ success: true, message: "Product updated successfully", product: updatedProduct });
+  } catch (error) {
+    console.error("Error in updateProduct:", error);
+    res.status(500).json({ success: false, message: "Failed to update product" });
+  }
+};
+
+
+export { addProduct, listProduct, removeProduct, singleProduct, updateProduct };
