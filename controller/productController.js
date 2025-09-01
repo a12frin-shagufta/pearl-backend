@@ -96,18 +96,20 @@ const updateProduct = async (req, res) => {
 
     if (!id) return res.status(400).json({ success: false, message: "Product ID required" });
 
+    let parsedDetails = [];
+    if (typeof details === "string") {
+      try {
+        parsedDetails = JSON.parse(details);
+      } catch {
+        parsedDetails = details ? [details] : [];
+      }
+    } else if (Array.isArray(details)) {
+      parsedDetails = details;
+    }
+
     const updatedProduct = await productModel.findByIdAndUpdate(
       id,
-      {
-        name,
-        price,
-        category,
-        subcategory,
-        stock,
-        bestseller,
-        description,
-        details: details ? JSON.parse(details) : [],
-      },
+      { name, price, category, subcategory, stock, bestseller, description, details: parsedDetails },
       { new: true }
     );
 
@@ -121,6 +123,8 @@ const updateProduct = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to update product" });
   }
 };
+
+
 
 
 export { addProduct, listProduct, removeProduct, singleProduct, updateProduct };
