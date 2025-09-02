@@ -13,10 +13,9 @@ const productSchema = new mongoose.Schema(
     stock: { type: Number, required: true },
     bestseller: { type: Boolean, default: false },
     description: { type: String },
-    details: {
-  type: String,
-  required: true,
-  trim: true,
+   details: {
+  type: [String], // array of strings instead of a single string
+  default: [],
 },
 
     size: { type: String },

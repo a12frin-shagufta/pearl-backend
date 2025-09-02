@@ -109,7 +109,16 @@ const updateProduct = async (req, res) => {
 
     const updatedProduct = await productModel.findByIdAndUpdate(
       id,
-      { name, price, category, subcategory, stock, bestseller, description, details: parsedDetails },
+      {
+        name,
+        price,
+        category,
+        subcategory,
+        stock,
+        bestseller,
+        description,
+        details: parsedDetails,
+      },
       { new: true }
     );
 
@@ -123,7 +132,6 @@ const updateProduct = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to update product" });
   }
 };
-
 
 
 
