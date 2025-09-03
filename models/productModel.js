@@ -10,14 +10,13 @@ const productSchema = new mongoose.Schema(
     name: { type: String, required: true },
     price: { type: Number, required: true },
     category: { type: String, required: true },
+    subcategory: { type: String }, // ✅ add subcategory
     stock: { type: Number, required: true },
     bestseller: { type: Boolean, default: false },
     description: { type: String },
-    details: { type: [String], default: [] }, // bullet points
+    details: { type: [String], default: [] },
     size: { type: String },
     variants: [variantSchema],
-
-    // 👇 Add FAQs
     faqs: [
       {
         question: { type: String, required: true },

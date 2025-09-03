@@ -1,14 +1,14 @@
 import { v2 as cloudinary } from "cloudinary";
 import productModel from "../models/productModel.js";
 
- const addProduct = async (req, res) => {
+const addProduct = async (req, res) => {
   try {
     const {
-      name, price, category, stock, bestseller,
+      name, price, category, subcategory, stock, bestseller,
       description, size, colors, details, faqs
     } = req.body;
 
-    const colorArray = JSON.parse(colors); // parse stringified array
+    const colorArray = JSON.parse(colors || "[]");
     const files = req.files || [];
 
     if (colorArray.length !== files.length) {
@@ -24,7 +24,6 @@ import productModel from "../models/productModel.js";
       images: [uploads[i].secure_url],
     }));
 
-    // ✅ Parse details
     let parsedDetails = [];
     if (details) {
       try {
@@ -34,7 +33,6 @@ import productModel from "../models/productModel.js";
       }
     }
 
-    // ✅ Parse faqs
     let parsedFaqs = [];
     if (faqs) {
       try {
@@ -48,6 +46,7 @@ import productModel from "../models/productModel.js";
       name,
       price,
       category,
+      subcategory, // ✅ save subcategory
       stock,
       bestseller: bestseller === "true",
       description,
@@ -64,8 +63,6 @@ import productModel from "../models/productModel.js";
     res.status(500).json({ success: false, message: "Server error while adding product." });
   }
 };
-
-
 
 
 
