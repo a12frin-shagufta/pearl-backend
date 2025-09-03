@@ -5,7 +5,7 @@ import productModel from "../models/productModel.js";
   try {
     const {
       name, price, category, stock, bestseller,
-      description, size, colors , details
+      description, size, colors, details, faqs
     } = req.body;
 
     const colorArray = JSON.parse(colors); // parse stringified array
@@ -24,6 +24,26 @@ import productModel from "../models/productModel.js";
       images: [uploads[i].secure_url],
     }));
 
+    // ✅ Parse details
+    let parsedDetails = [];
+    if (details) {
+      try {
+        parsedDetails = JSON.parse(details);
+      } catch {
+        parsedDetails = details ? [details] : [];
+      }
+    }
+
+    // ✅ Parse faqs
+    let parsedFaqs = [];
+    if (faqs) {
+      try {
+        parsedFaqs = JSON.parse(faqs);
+      } catch {
+        parsedFaqs = [];
+      }
+    }
+
     const newProduct = new productModel({
       name,
       price,
@@ -31,9 +51,10 @@ import productModel from "../models/productModel.js";
       stock,
       bestseller: bestseller === "true",
       description,
-      details,
+      details: parsedDetails,
       size,
       variants,
+      faqs: parsedFaqs,
     });
 
     await newProduct.save();
@@ -43,6 +64,7 @@ import productModel from "../models/productModel.js";
     res.status(500).json({ success: false, message: "Server error while adding product." });
   }
 };
+
 
 
 
@@ -89,13 +111,13 @@ const singleProduct = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to fetch product." });
   }
 };
-
 const updateProduct = async (req, res) => {
   try {
-    const { id, name, price, category, subcategory, stock, bestseller, description, details } = req.body;
+    const { id, name, price, category, subcategory, stock, bestseller, description, details, faqs } = req.body;
 
     if (!id) return res.status(400).json({ success: false, message: "Product ID required" });
 
+    // ✅ Parse details
     let parsedDetails = [];
     if (typeof details === "string") {
       try {
@@ -105,6 +127,18 @@ const updateProduct = async (req, res) => {
       }
     } else if (Array.isArray(details)) {
       parsedDetails = details;
+    }
+
+    // ✅ Parse faqs
+    let parsedFaqs = [];
+    if (typeof faqs === "string") {
+      try {
+        parsedFaqs = JSON.parse(faqs);
+      } catch {
+        parsedFaqs = [];
+      }
+    } else if (Array.isArray(faqs)) {
+      parsedFaqs = faqs;
     }
 
     const updatedProduct = await productModel.findByIdAndUpdate(
@@ -118,6 +152,7 @@ const updateProduct = async (req, res) => {
         bestseller,
         description,
         details: parsedDetails,
+        faqs: parsedFaqs,
       },
       { new: true }
     );
@@ -132,6 +167,7 @@ const updateProduct = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to update product" });
   }
 };
+
 
 
 

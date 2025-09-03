@@ -13,15 +13,20 @@ const productSchema = new mongoose.Schema(
     stock: { type: Number, required: true },
     bestseller: { type: Boolean, default: false },
     description: { type: String },
-   details: {
-  type: [String], // array of strings instead of a single string
-  default: [],
-},
-
+    details: { type: [String], default: [] }, // bullet points
     size: { type: String },
     variants: [variantSchema],
+
+    // 👇 Add FAQs
+    faqs: [
+      {
+        question: { type: String, required: true },
+        answer: { type: String, required: true },
+      },
+    ],
   },
   { timestamps: true }
 );
+
 
 export default mongoose.model("Product", productSchema);
