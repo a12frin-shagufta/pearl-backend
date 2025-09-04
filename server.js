@@ -42,7 +42,7 @@ app.use('/api/offer', offerRouter);
 app.use('/api/product', productRouter);
 app.use('/api/contact', contactRouter);
 app.use('/api/category', categoryRouter);
-app.use('/api/testimonial', testimonialRouter);
+app.use('/api/testimonials', testimonialRouter);
 
 
 // ✅ Test route
