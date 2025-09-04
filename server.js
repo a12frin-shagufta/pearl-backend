@@ -14,19 +14,23 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // ✅ Setup allowed origins from .env
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map(s => s.trim()); // trim just in case
 
 app.use(cors({
-  origin: function (origin, callback) {
-    console.log("CORS check for:", origin);  // 👈 Add this
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  origin(origin, cb) {
+    console.log("CORS check for:", origin);
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error(`Not allowed by CORS: ${origin}`));
   },
-  credentials: true
+  credentials: true,
+  methods: ["GET","POST","PUT","DELETE","PATCH","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
 }));
 
+// respond to preflight fast
+app.options("*", cors());
 
 // ✅ Body parser
 app.use(express.json());
