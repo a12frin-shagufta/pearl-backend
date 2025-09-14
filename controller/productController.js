@@ -3,55 +3,88 @@ import productModel from "../models/productModel.js";
 import fs from "fs";
 
 const uploadToCloudinary = async (filePath) => {
-  // use resource_type: "auto" — more robust for image types
   const res = await cloudinary.uploader.upload(filePath, { resource_type: "auto" });
   return res.secure_url;
 };
 
 const addProduct = async (req, res) => {
   try {
-    const {
-      name, price, category, subcategory, stock, bestseller,
-      description, size, colors, details, faqs
-    } = req.body;
+    // Debugging: show what arrived
+    console.log("=== addProduct req.body keys:", Object.keys(req.body || {}));
+    console.log("=== addProduct req.files keys:", req.files ? Object.keys(req.files) : "no req.files");
 
-    // parse color array (client should send JSON string)
+    // If multer.fields was used, req.files is an object:
+    // { "images[]": [fileObj,...], "images": [fileObj,...], ... }
+    // Collect all uploaded file objects into a single array preserving order by field group
+    let files = [];
+    if (req.files) {
+      if (Array.isArray(req.files)) {
+        files = req.files; // in case upload.array used elsewhere
+      } else {
+        // flatten object (order per property may vary — we will pair by index later)
+        const fieldNames = Object.keys(req.files);
+        fieldNames.forEach((fn) => {
+          if (Array.isArray(req.files[fn])) {
+            req.files[fn].forEach((f) => files.push(f));
+          }
+        });
+      }
+    }
+
+    console.log("=== flattened files count:", files.length);
+    console.log(files.map(f => ({ originalname: f.originalname, fieldname: f.fieldname, mimetype: f.mimetype })));
+
+    // parse product fields
+    const { name, price, category, subcategory, stock, bestseller, description, size } = req.body;
+
+    // parse colors from req.body.colors (client likely JSON string)
     let colorArray = [];
-    try { colorArray = JSON.parse(colors || "[]"); } catch { colorArray = colors ? [colors] : []; }
-
-    // collect files from req.files (multer.fields returns object)
-    const files = Array.isArray(req.files) ? req.files : [];
-
-    if (colorArray.length !== files.length) {
-      return res.status(400).json({ success: false, message: "Color count and image count must match." });
+    if (req.body.colors) {
+      try { colorArray = JSON.parse(req.body.colors); }
+      catch {
+        if (Array.isArray(req.body.colors)) colorArray = req.body.colors;
+        else colorArray = [req.body.colors];
+      }
     }
 
-    if (colorArray.length !== files.length) {
-      return res.status(400).json({ success: false, message: "Color count and image count must match." });
+    // parse imageColors[] if frontend sent mapping
+    let imageColors = [];
+    if (req.body["imageColors[]"]) {
+      imageColors = Array.isArray(req.body["imageColors[]"]) ? req.body["imageColors[]"] : [req.body["imageColors[]"]];
+    } else if (req.body.imageColors) {
+      imageColors = Array.isArray(req.body.imageColors) ? req.body.imageColors : [req.body.imageColors];
     }
 
-    // upload files to cloudinary
+    // Decide which color mapping to use:
+    // Prefer imageColors (explicit mapping), else colorArray, else fallback to unnamed colors by index
+    let finalColors = [];
+    if (imageColors.length === files.length) finalColors = imageColors;
+    else if (colorArray.length === files.length) finalColors = colorArray;
+    else {
+      // fallback: create placeholder color names
+      finalColors = files.map((_, i) => (colorArray[i] || imageColors[i] || `color-${i}`));
+      console.warn("Color-file count mismatch; falling back to index-based color names");
+    }
+
+    // Upload files to Cloudinary
     const uploads = await Promise.all(files.map(f => uploadToCloudinary(f.path)));
 
-    // optionally delete temp files
+    // cleanup tmp files
     files.forEach(f => {
       try { fs.unlinkSync(f.path); } catch (e) { /* ignore */ }
     });
 
-    const variants = colorArray.map((color, i) => ({
-      color,
-      images: [uploads[i]]
-    }));
+    // Build variants pairing uploads with finalColors by index
+    const variants = uploads.map((url, i) => ({ color: finalColors[i] || `color-${i}`, images: [url] }));
 
-    // parse details & faqs robustly
+    // parse details & faqs
     let parsedDetails = [];
-    if (details) {
-      try { parsedDetails = JSON.parse(details); } catch { parsedDetails = Array.isArray(details) ? details : [details]; }
+    if (req.body.details) {
+      try { parsedDetails = JSON.parse(req.body.details); } catch { parsedDetails = Array.isArray(req.body.details) ? req.body.details : [req.body.details]; }
     }
-
     let parsedFaqs = [];
-    if (faqs) {
-      try { parsedFaqs = JSON.parse(faqs); } catch { parsedFaqs = Array.isArray(faqs) ? faqs : []; }
+    if (req.body.faqs) {
+      try { parsedFaqs = JSON.parse(req.body.faqs); } catch { parsedFaqs = Array.isArray(req.body.faqs) ? req.body.faqs : []; }
     }
 
     const newProduct = new productModel({
@@ -69,14 +102,12 @@ const addProduct = async (req, res) => {
     });
 
     await newProduct.save();
-    res.status(201).json({ success: true, message: "Product added successfully." });
+    return res.status(201).json({ success: true, message: "Product added successfully." });
   } catch (err) {
     console.error("Error in addProduct:", err);
-    res.status(500).json({ success: false, message: "Server error while adding product." });
+    return res.status(500).json({ success: false, message: "Server error while adding product." });
   }
 };
-
-
 
 
 
