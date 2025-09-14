@@ -3,7 +3,8 @@ import productModel from "../models/productModel.js";
 import fs from "fs";
 
 const uploadToCloudinary = async (filePath) => {
-  const res = await cloudinary.uploader.upload(filePath, { resource_type: "image" });
+  // use resource_type: "auto" — more robust for image types
+  const res = await cloudinary.uploader.upload(filePath, { resource_type: "auto" });
   return res.secure_url;
 };
 
@@ -19,10 +20,10 @@ const addProduct = async (req, res) => {
     try { colorArray = JSON.parse(colors || "[]"); } catch { colorArray = colors ? [colors] : []; }
 
     // collect files from req.files (multer.fields returns object)
-    let files = [];
-    if (req.files) {
-      if (Array.isArray(req.files)) files = req.files;
-      else files = Object.values(req.files).flat();
+    const files = Array.isArray(req.files) ? req.files : [];
+
+    if (colorArray.length !== files.length) {
+      return res.status(400).json({ success: false, message: "Color count and image count must match." });
     }
 
     if (colorArray.length !== files.length) {
