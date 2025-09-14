@@ -11,6 +11,7 @@ const uploadToCloudinary = async (filePath, originalName) => {
         { quality: "auto", fetch_format: "auto" },
       ],
     });
+    console.log(`Uploaded ${originalName} to Cloudinary: ${res.secure_url}`);
     return res.secure_url;
   } catch (err) {
     console.error(`Cloudinary upload failed for ${originalName}:`, err);
@@ -254,7 +255,6 @@ const singleProduct = async (req, res) => {
 };
 
 export { addProduct, listProduct, removeProduct, singleProduct, updateProduct };
-
 // import { v2 as cloudinary } from "cloudinary";
 // import productModel from "../models/productModel.js";
 // import fs from "fs";

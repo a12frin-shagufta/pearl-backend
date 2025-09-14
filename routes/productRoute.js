@@ -27,6 +27,7 @@ const storage = multer.diskStorage({
 
 // Accept any image mimetype
 const imageFileFilter = (req, file, cb) => {
+  console.log(`Received file: ${file.originalname}, fieldname: ${file.fieldname}, mimetype: ${file.mimetype}`);
   if (file && file.mimetype && file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
@@ -46,8 +47,8 @@ const upload = multer({
 // Multer error handling middleware
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
-    console.error("Multer error:", err.message, err.field);
-    return res.status(400).json({ success: false, message: `Multer error: ${err.message}` });
+    console.error(`Multer error: ${err.message}, Field: ${err.field || "unknown"}`);
+    return res.status(400).json({ success: false, message: `Multer error: ${err.message}, Field: ${err.field || "unknown"}` });
   }
   next(err);
 };
