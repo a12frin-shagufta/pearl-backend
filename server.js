@@ -15,7 +15,13 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // ✅ Setup allowed origins from .env
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+const rawAllowed = process.env.ALLOWED_ORIGINS || "";
+const allowedOrigins = rawAllowed
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+console.log("CORS allowed origins (env):", allowedOrigins);
 
 app.use(cors({
   origin: function (origin, callback) {
