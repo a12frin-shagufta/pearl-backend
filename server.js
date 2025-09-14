@@ -15,18 +15,39 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // ✅ Setup allowed origins from .env
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+// ---------- CORS setup (replace existing block) ----------
+const rawAllowed = process.env.ALLOWED_ORIGINS || "";
+const allowedOrigins = rawAllowed
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
 
-app.use(cors({
+// helpful startup log
+console.log("CORS allowed origins:", allowedOrigins);
+
+const corsOptions = {
   origin: function (origin, callback) {
-    console.log("CORS check for:", origin);  // 👈 Add this
-    if (!origin || allowedOrigins.includes(origin)) {
+    console.log("CORS check for:", origin);
+    // allow requests with no origin (server-to-server, curl, mobile)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
+
+    console.warn(`CORS blocked origin: ${origin}`);
     return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
-  credentials: true
-}));
+  credentials: true,
+  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization","Accept","Origin"]
+};
+
+// use the middleware and explicitly handle preflight
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+// ---------------------------------------------------------
+
 
 
 // ✅ Body parser
