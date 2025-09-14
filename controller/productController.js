@@ -7,8 +7,8 @@ const uploadToCloudinary = async (filePath, originalName) => {
     const res = await cloudinary.uploader.upload(filePath, {
       resource_type: "auto",
       transformation: [
-        { width: 1200, height: 1200, crop: "limit" }, // Resize large images
-        { quality: "auto", fetch_format: "auto" }, // Optimize quality/format
+        { width: 1200, height: 1200, crop: "limit" },
+        { quality: "auto", fetch_format: "auto" },
       ],
     });
     return res.secure_url;
@@ -20,22 +20,10 @@ const uploadToCloudinary = async (filePath, originalName) => {
 
 const addProduct = async (req, res) => {
   try {
-    console.log("=== addProduct req.body keys:", Object.keys(req.body || {}));
-    console.log("=== addProduct req.files keys:", req.files ? Object.keys(req.files) : "no req.files");
+    console.log("=== addProduct req.body:", req.body);
+    console.log("=== addProduct req.files:", req.files ? Object.keys(req.files) : "no req.files");
 
-    // Collect variant images (variantImage0..variantImage29)
-    const variantFiles = [];
-    const maxVariants = 30;
-    for (let i = 0; i < maxVariants; i++) {
-      const key = `variantImage${i}`;
-      if (req.files && req.files[key] && req.files[key][0]) {
-        variantFiles.push({ index: i, file: req.files[key][0] });
-      }
-    }
-
-    console.log("variantFiles count:", variantFiles.length);
-
-    // Parse colors
+    // Validate colors
     let colorArray = [];
     if (req.body.colors) {
       try {
@@ -44,18 +32,34 @@ const addProduct = async (req, res) => {
         colorArray = Array.isArray(req.body.colors) ? req.body.colors : [req.body.colors];
       }
     }
+    if (!colorArray.length) {
+      return res.status(400).json({ success: false, message: "At least one color is required" });
+    }
 
-    // Upload variant images to Cloudinary
+    // Collect variant images
+    const variantFiles = [];
+    for (let i = 0; i < colorArray.length; i++) {
+      const key = `variantImage${i}`;
+      if (req.files && req.files[key] && req.files[key][0]) {
+        variantFiles.push(req.files[key][0]);
+      } else {
+        return res.status(400).json({ success: false, message: `Missing image for color "${colorArray[i]}"` });
+      }
+    }
+
+    console.log("variantFiles count:", variantFiles.length);
+
+    // Upload images to Cloudinary
     const uploadedVariantUrls = await Promise.all(
-      variantFiles.map((v) => uploadToCloudinary(v.file.path, v.file.originalname))
+      variantFiles.map((file) => uploadToCloudinary(file.path, file.originalname))
     );
 
     // Cleanup temp files
-    variantFiles.forEach((v) => {
+    variantFiles.forEach((file) => {
       try {
-        fs.unlinkSync(v.file.path);
+        fs.unlinkSync(file.path);
       } catch (e) {
-        console.warn(`Failed to delete temp file ${v.file.path}:`, e);
+        console.warn(`Failed to delete temp file ${file.path}:`, e);
       }
     });
 
@@ -87,12 +91,16 @@ const addProduct = async (req, res) => {
     // Create product
     const { name, price, category, subcategory, stock, bestseller, description, size } = req.body;
 
+    if (!name || !price || !category || !stock) {
+      return res.status(400).json({ success: false, message: "Required fields missing" });
+    }
+
     const newProduct = new productModel({
       name,
-      price,
+      price: Number(price),
       category,
       subcategory,
-      stock,
+      stock: Number(stock),
       bestseller: bestseller === "true" || bestseller === true,
       description,
       details: parsedDetails,
@@ -115,7 +123,7 @@ const updateProduct = async (req, res) => {
 
     if (!id) return res.status(400).json({ success: false, message: "Product ID required" });
 
-    // Parse details
+    // Parse fields
     let parsedDetails = [];
     if (typeof details === "string") {
       try {
@@ -127,7 +135,6 @@ const updateProduct = async (req, res) => {
       parsedDetails = details;
     }
 
-    // Parse faqs
     let parsedFaqs = [];
     if (typeof faqs === "string") {
       try {
@@ -139,7 +146,6 @@ const updateProduct = async (req, res) => {
       parsedFaqs = faqs;
     }
 
-    // Parse colors
     let parsedColors = [];
     if (typeof colors === "string") {
       try {
@@ -152,43 +158,43 @@ const updateProduct = async (req, res) => {
     }
 
     // Handle variant images
-    const variantFiles = [];
-    const maxVariants = 30;
-    for (let i = 0; i < maxVariants; i++) {
-      const key = `variantImage${i}`;
-      if (req.files && req.files[key] && req.files[key][0]) {
-        variantFiles.push({ index: i, file: req.files[key][0] });
+    let variants;
+    if (parsedColors.length && req.files) {
+      const variantFiles = [];
+      for (let i = 0; i < parsedColors.length; i++) {
+        const key = `variantImage${i}`;
+        if (req.files[key] && req.files[key][0]) {
+          variantFiles.push(req.files[key][0]);
+        } else {
+          return res.status(400).json({ success: false, message: `Missing image for color "${parsedColors[i]}"` });
+        }
       }
+
+      const uploadedVariantUrls = await Promise.all(
+        variantFiles.map((file) => uploadToCloudinary(file.path, file.originalname))
+      );
+
+      variantFiles.forEach((file) => {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (e) {
+          console.warn(`Failed to delete temp file ${file.path}:`, e);
+        }
+      });
+
+      variants = uploadedVariantUrls.map((url, i) => ({
+        color: parsedColors[i] || `color-${i + 1}`,
+        images: [url],
+      }));
     }
-
-    const uploadedVariantUrls = variantFiles.length
-      ? await Promise.all(variantFiles.map((v) => uploadToCloudinary(v.file.path, v.file.originalname)))
-      : [];
-
-    // Cleanup temp files
-    variantFiles.forEach((v) => {
-      try {
-        fs.unlinkSync(v.file.path);
-      } catch (e) {
-        console.warn(`Failed to delete temp file ${v.file.path}:`, e);
-      }
-    });
-
-    // Build variants
-    const variants = uploadedVariantUrls.length
-      ? uploadedVariantUrls.map((url, i) => ({
-          color: parsedColors[i] || `color-${i + 1}`,
-          images: [url],
-        }))
-      : undefined;
 
     // Update product
     const updateData = {
       name,
-      price,
+      price: Number(price),
       category,
       subcategory,
-      stock,
+      stock: Number(stock),
       bestseller: bestseller === "true" || bestseller === true,
       description,
       details: parsedDetails,
@@ -248,7 +254,6 @@ const singleProduct = async (req, res) => {
 };
 
 export { addProduct, listProduct, removeProduct, singleProduct, updateProduct };
-
 
 // import { v2 as cloudinary } from "cloudinary";
 // import productModel from "../models/productModel.js";

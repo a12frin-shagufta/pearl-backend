@@ -17,7 +17,7 @@ const productRouter = express.Router();
 const UPLOAD_DIR = path.join(process.cwd(), "tmp", "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// Multer storage (safe filenames)
+// Multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
@@ -41,13 +41,19 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB per file
     files: 30, // Max 30 variant images
   },
-});
+}).fields(Array.from({ length: 30 }, (_, i) => ({ name: `variantImage${i}`, maxCount: 1 })));
 
-// Only variant images
-const uploadFields = Array.from({ length: 30 }, (_, i) => ({ name: `variantImage${i}`, maxCount: 1 }));
+// Multer error handling middleware
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    console.error("Multer error:", err.message, err.field);
+    return res.status(400).json({ success: false, message: `Multer error: ${err.message}` });
+  }
+  next(err);
+};
 
-productRouter.post("/add", verifyAdminToken, upload.fields(uploadFields), addProduct);
-productRouter.post("/update", verifyAdminToken, upload.fields(uploadFields), updateProduct);
+productRouter.post("/add", verifyAdminToken, upload, handleMulterError, addProduct);
+productRouter.post("/update", verifyAdminToken, upload, handleMulterError, updateProduct);
 
 productRouter.get("/list", listProduct);
 productRouter.post("/single", singleProduct);
