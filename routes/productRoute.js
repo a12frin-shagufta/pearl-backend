@@ -27,7 +27,7 @@ const storage = multer.diskStorage({
 
 // Accept any image mimetype
 const imageFileFilter = (req, file, cb) => {
-  console.log(`Received file: ${file.originalname}, fieldname: ${file.fieldname}, mimetype: ${file.mimetype}`);
+  console.log(`Received file: ${file.originalname}, fieldname: ${file.fieldname}, mimetype: ${file.mimetype}, size: ${file.size} bytes`);
   if (file && file.mimetype && file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
@@ -48,13 +48,31 @@ const upload = multer({
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     console.error(`Multer error: ${err.message}, Field: ${err.field || "unknown"}`);
-    return res.status(400).json({ success: false, message: `Multer error: ${err.message}, Field: ${err.field || "unknown"}` });
+    console.log("All received fields:", {
+      body: Object.keys(req.body || {}),
+      files: Object.keys(req.files || {}),
+    });
+    return res.status(400).json({
+      success: false,
+      message: `Multer error: ${err.message}, Field: ${err.field || "unknown"}`,
+    });
   }
   next(err);
 };
 
-productRouter.post("/add", verifyAdminToken, upload, handleMulterError, addProduct);
-productRouter.post("/update", verifyAdminToken, upload, handleMulterError, updateProduct);
+// Log all incoming form fields
+const logFormFields = (req, res, next) => {
+  console.log("Incoming request:", {
+    method: req.method,
+    url: req.url,
+    body: req.body ? Object.keys(req.body) : [],
+    files: req.files ? Object.keys(req.files) : [],
+  });
+  next();
+};
+
+productRouter.post("/add", verifyAdminToken, logFormFields, upload, handleMulterError, addProduct);
+productRouter.post("/update", verifyAdminToken, logFormFields, upload, handleMulterError, updateProduct);
 
 productRouter.get("/list", listProduct);
 productRouter.post("/single", singleProduct);

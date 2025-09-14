@@ -2,20 +2,23 @@ import { v2 as cloudinary } from "cloudinary";
 import productModel from "../models/productModel.js";
 import fs from "fs";
 
-const uploadToCloudinary = async (filePath, originalName) => {
-  try {
-    const res = await cloudinary.uploader.upload(filePath, {
-      resource_type: "auto",
-      transformation: [
-        { width: 1200, height: 1200, crop: "limit" },
-        { quality: "auto", fetch_format: "auto" },
-      ],
-    });
-    console.log(`Uploaded ${originalName} to Cloudinary: ${res.secure_url}`);
-    return res.secure_url;
-  } catch (err) {
-    console.error(`Cloudinary upload failed for ${originalName}:`, err);
-    throw new Error(`Failed to upload image "${originalName}": ${err.message}`);
+const uploadToCloudinary = async (filePath, originalName, retries = 3, delay = 1000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await cloudinary.uploader.upload(filePath, {
+        resource_type: "auto",
+        transformation: [
+          { width: 1200, height: 1200, crop: "limit" },
+          { quality: "auto", fetch_format: "auto" },
+        ],
+      });
+      console.log(`Uploaded ${originalName} to Cloudinary: ${res.secure_url}`);
+      return res.secure_url;
+    } catch (err) {
+      console.error(`Cloudinary upload attempt ${i + 1} failed for ${originalName}:`, err);
+      if (i === retries - 1) throw new Error(`Failed to upload image "${originalName}": ${err.message}`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
 };
 
@@ -37,12 +40,26 @@ const addProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: "At least one color is required" });
     }
 
-    // Collect variant images
+    // Collect and validate variant images
     const variantFiles = [];
     for (let i = 0; i < colorArray.length; i++) {
       const key = `variantImage${i}`;
       if (req.files && req.files[key] && req.files[key][0]) {
-        variantFiles.push(req.files[key][0]);
+        const file = req.files[key][0];
+        // Basic JPEG validation
+        if (file.mimetype === "image/jpeg" && file.size > 0) {
+          try {
+            // Read file to check for valid JPEG
+            const buffer = fs.readFileSync(file.path);
+            if (!buffer.slice(0, 2).equals(Buffer.from([0xff, 0xd8]))) {
+              throw new Error(`File "${file.originalname}" is not a valid JPEG`);
+            }
+          } catch (err) {
+            console.error(`Invalid JPEG: ${file.originalname}`, err);
+            return res.status(400).json({ success: false, message: `Invalid JPEG: ${file.originalname}` });
+          }
+        }
+        variantFiles.push(file);
       } else {
         return res.status(400).json({ success: false, message: `Missing image for color "${colorArray[i]}"` });
       }
@@ -165,7 +182,19 @@ const updateProduct = async (req, res) => {
       for (let i = 0; i < parsedColors.length; i++) {
         const key = `variantImage${i}`;
         if (req.files[key] && req.files[key][0]) {
-          variantFiles.push(req.files[key][0]);
+          const file = req.files[key][0];
+          if (file.mimetype === "image/jpeg" && file.size > 0) {
+            try {
+              const buffer = fs.readFileSync(file.path);
+              if (!buffer.slice(0, 2).equals(Buffer.from([0xff, 0xd8]))) {
+                throw new Error(`File "${file.originalname}" is not a valid JPEG`);
+              }
+            } catch (err) {
+              console.error(`Invalid JPEG: ${file.originalname}`, err);
+              return res.status(400).json({ success: false, message: `Invalid JPEG: ${file.originalname}` });
+            }
+          }
+          variantFiles.push(file);
         } else {
           return res.status(400).json({ success: false, message: `Missing image for color "${parsedColors[i]}"` });
         }
@@ -232,7 +261,7 @@ const removeProduct = async (req, res) => {
     if (!id) return res.status(400).json({ success: false, message: "Product ID is required." });
 
     await productModel.findByIdAndDelete(id);
-    res.status(200).json({ success: true, message: "Product removed successfully." });
+    res.status(200).json({ success: false, message: "Product removed successfully." });
   } catch (error) {
     console.error("Error in removeProduct:", error);
     res.status(500).json({ success: false, message: "Failed to delete product." });
