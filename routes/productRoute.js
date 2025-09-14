@@ -18,45 +18,50 @@ const productRouter = express.Router();
 const UPLOAD_DIR = path.join(process.cwd(), "tmp", "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// multer storage
+// multer storage (safe filenames)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
+    // keep original extension but prefix with timestamp/random
     cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.originalname}`);
   },
 });
 
-// allow common images including .jpeg
+// ✅ Accept any image mimetype (jpg, jpeg, png, webp, gif, svg, bmp, tiff, etc.)
 const imageFileFilter = (req, file, cb) => {
-  const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
-  if (allowed.includes(file.mimetype)) cb(null, true);
-  else cb(new Error("Only image files are allowed (jpeg/jpg/png/webp/gif)"));
+  if (file && file.mimetype && file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed"), false);
+  }
 };
 
 const upload = multer({
   storage,
   fileFilter: imageFileFilter,
-  limits: { fileSize: 25 * 1024 * 1024, files: 10 }, // 25MB, max 10 files
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB per file (increase if needed)
+    files: 60, // overall file count limit (adjust to suit)
+  },
 });
 
-/*
-  Option B: accept literal field names such as:
-   - "images[]" (if frontend uses images[]),
-   - "media[]" (if frontend uses media[]),
-   - also accept "images" and "media" just in case.
-
-  multer.fields expects an array of { name, maxCount } objects.
-  It will populate req.files as an object: { "images[]": [...], "images": [...], ... }
-*/
-const acceptedFields = [
-  { name: "images[]", maxCount: 10 },
-  { name: "media[]", maxCount: 10 },
-  { name: "images", maxCount: 10 },
-  { name: "media", maxCount: 10 },
+// Build fields array: image1..image4 + variantImage0..variantImage29 + compatibility names
+const variantFields = Array.from({ length: 30 }, (_, i) => ({ name: `variantImage${i}`, maxCount: 1 }));
+const uploadFields = [
+  { name: "image1", maxCount: 1 },
+  { name: "image2", maxCount: 1 },
+  { name: "image3", maxCount: 1 },
+  { name: "image4", maxCount: 1 },
+  ...variantFields,
+  // optional compatibility: if some clients send images[] or media[]
+  { name: "images[]", maxCount: 30 },
+  { name: "images", maxCount: 30 },
+  { name: "media[]", maxCount: 30 },
+  { name: "media", maxCount: 30 },
 ];
 
-productRouter.post("/add", verifyAdminToken, upload.fields(acceptedFields), addProduct);
-productRouter.post("/update", verifyAdminToken, upload.fields(acceptedFields), updateProduct);
+productRouter.post("/add", verifyAdminToken, upload.fields(uploadFields), addProduct);
+productRouter.post("/update", verifyAdminToken, upload.fields(uploadFields), updateProduct);
 
 productRouter.get("/list", listProduct);
 productRouter.post("/single", singleProduct);
