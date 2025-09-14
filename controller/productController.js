@@ -1,5 +1,11 @@
 import { v2 as cloudinary } from "cloudinary";
 import productModel from "../models/productModel.js";
+import fs from "fs";
+
+const uploadToCloudinary = async (filePath) => {
+  const res = await cloudinary.uploader.upload(filePath, { resource_type: "image" });
+  return res.secure_url;
+};
 
 const addProduct = async (req, res) => {
   try {
@@ -8,52 +14,57 @@ const addProduct = async (req, res) => {
       description, size, colors, details, faqs
     } = req.body;
 
-    const colorArray = JSON.parse(colors || "[]");
-    const files = req.files || [];
+    // parse color array (client should send JSON string)
+    let colorArray = [];
+    try { colorArray = JSON.parse(colors || "[]"); } catch { colorArray = colors ? [colors] : []; }
+
+    // collect files from req.files (multer.fields returns object)
+    let files = [];
+    if (req.files) {
+      if (Array.isArray(req.files)) files = req.files;
+      else files = Object.values(req.files).flat();
+    }
 
     if (colorArray.length !== files.length) {
       return res.status(400).json({ success: false, message: "Color count and image count must match." });
     }
 
-    const uploads = await Promise.all(
-      files.map(file => cloudinary.uploader.upload(file.path, { resource_type: "image" }))
-    );
+    // upload files to cloudinary
+    const uploads = await Promise.all(files.map(f => uploadToCloudinary(f.path)));
+
+    // optionally delete temp files
+    files.forEach(f => {
+      try { fs.unlinkSync(f.path); } catch (e) { /* ignore */ }
+    });
 
     const variants = colorArray.map((color, i) => ({
       color,
-      images: [uploads[i].secure_url],
+      images: [uploads[i]]
     }));
 
+    // parse details & faqs robustly
     let parsedDetails = [];
     if (details) {
-      try {
-        parsedDetails = JSON.parse(details);
-      } catch {
-        parsedDetails = details ? [details] : [];
-      }
+      try { parsedDetails = JSON.parse(details); } catch { parsedDetails = Array.isArray(details) ? details : [details]; }
     }
 
     let parsedFaqs = [];
     if (faqs) {
-      try {
-        parsedFaqs = JSON.parse(faqs);
-      } catch {
-        parsedFaqs = [];
-      }
+      try { parsedFaqs = JSON.parse(faqs); } catch { parsedFaqs = Array.isArray(faqs) ? faqs : []; }
     }
 
     const newProduct = new productModel({
       name,
       price,
       category,
-      subcategory, // ✅ save subcategory
+      subcategory,
       stock,
-      bestseller: bestseller === "true",
+      bestseller: bestseller === "true" || bestseller === true,
       description,
       details: parsedDetails,
       size,
       variants,
-      faqs: parsedFaqs,
+      faqs: parsedFaqs
     });
 
     await newProduct.save();
@@ -63,6 +74,8 @@ const addProduct = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error while adding product." });
   }
 };
+
+
 
 
 
