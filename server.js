@@ -51,7 +51,7 @@ app.options("*", require("cors")(corsOptions));
 // ✅ Body parser
 app.use(express.json());
 
-// ✅ Connect services
+// ✅ Connect servicesww
 connectDb();
 connectCloudinary();
 
