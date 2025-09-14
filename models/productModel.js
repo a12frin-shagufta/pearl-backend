@@ -10,7 +10,7 @@ const productSchema = new mongoose.Schema(
     name: { type: String, required: true },
     price: { type: Number, required: true },
     category: { type: String, required: true },
-    subcategory: { type: String }, // ✅ add subcategory
+    subcategory: { type: String },
     stock: { type: Number, required: true },
     bestseller: { type: Boolean, default: false },
     description: { type: String },
@@ -26,6 +26,5 @@ const productSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 
 export default mongoose.model("Product", productSchema);
