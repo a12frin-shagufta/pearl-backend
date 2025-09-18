@@ -1,6 +1,6 @@
 import categoryModel from "../models/categoryModel.js";
 
-// Add new category
+// Add new categoryrr
 const addCategory = async (req, res) => {
   try {
     const { name } = req.body;
