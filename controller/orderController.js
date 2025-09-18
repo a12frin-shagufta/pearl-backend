@@ -2,7 +2,10 @@
 import path from "path";
 import fs from "fs";
 import Order from "../models/orderModel.js";
+import { sendEmail } from "../utils/SendEmail.js";
 
+
+// Create manual order
 // Create manual order
 export const createManualOrder = async (req, res) => {
   try {
@@ -41,7 +44,7 @@ export const createManualOrder = async (req, res) => {
       subtotal,
       shipping,
       total,
-       transactionRef,   // ✅ save it
+      transactionRef,   // ✅ save it
       senderLast4, 
       advanceRequired,
       paymentMethod: paymentMethod || "cod",
@@ -50,12 +53,36 @@ export const createManualOrder = async (req, res) => {
     });
 
     await order.save();
-    return res.status(201).json({ success: true, message: "Order created", orderId: order._id });
+
+    // ✉️ Send confirmation email
+    try {
+      await sendEmail({
+        to: email,
+        subject: "Order Confirmation",
+        html: `
+          <h2>Thank you for your order!</h2>
+          <p>Order ID: <strong>${order._id}</strong></p>
+          <p>Total: ${order.total}</p>
+          <p>We will contact you soon to confirm your payment.</p>
+        `
+      });
+    } catch (mailErr) {
+      console.error("Failed to send email:", mailErr);
+    }
+
+    // ✅ Respond AFTER sending email
+    return res.status(201).json({ 
+      success: true, 
+      message: "Order created", 
+      orderId: order._id 
+    });
+
   } catch (err) {
     console.error("create-manual error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
 
 // Upload proof for order (bank/jazz)
 export const uploadProof = async (req, res) => {
