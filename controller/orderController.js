@@ -20,6 +20,8 @@ export const createManualOrder = async (req, res) => {
       shipping,
       total,
       advanceRequired,
+      transactionRef,   // ✅ take from req.body
+      senderLast4,
       paymentInstructions,
     } = req.body;
 
@@ -39,6 +41,8 @@ export const createManualOrder = async (req, res) => {
       subtotal,
       shipping,
       total,
+       transactionRef,   // ✅ save it
+      senderLast4, 
       advanceRequired,
       paymentMethod: paymentMethod || "cod",
       paymentInstructions: paymentInstructions || {},

@@ -47,6 +47,9 @@ const orderSchema = new mongoose.Schema(
       default: "Pending",
     },
 
+    transactionRef: { type: String },   // ✅ add this
+    senderLast4: { type: String }, 
+
     paymentProofs: [proofSchema],
     paymentInstructions: mongoose.Schema.Types.Mixed,
   },
