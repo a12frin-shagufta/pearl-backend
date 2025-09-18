@@ -9,6 +9,8 @@ import productRouter from './routes/productRoute.js';
 import contactRouter from './routes/contactRoute.js';
 import categoryRouter from './routes/categoryRoute.js';
 import testimonialRouter from './routes/testimonialRoute.js';
+import orderRouter from './routes/orderRoute.js';
+import path from 'path';
 
 
 const app = express();
@@ -43,6 +45,8 @@ app.use('/api/product', productRouter);
 app.use('/api/contact', contactRouter);
 app.use('/api/category', categoryRouter);
 app.use('/api/testimonials', testimonialRouter);
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use('/api/order', orderRouter);
 
 
 // ✅ Test route

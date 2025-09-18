@@ -1,48 +1,57 @@
-// import mongoose from "mongoose";
+// models/Order.js
+import mongoose from "mongoose";
 
-// const orderSchema = new mongoose.Schema(
-//   {
-//     name: String,
-//     phone: String,
-//     email: String,
-//     address: String,
-//     city: String,
-//     state: String,
-//     note: String,
+const proofSchema = new mongoose.Schema({
+  url: String,
+  filename: String,
+  uploadedAt: { type: Date, default: Date.now },
+});
 
-//     items: [
-//       {
-//         productId: String,
-//         name: String,
-//         image: [String],
-//         quantity: Number,
-//         unitPrice: Number,
-//         total: Number,
-//       },
-//     ],
+const itemSchema = new mongoose.Schema({
+  productId: String,
+  key: String, // productId_variant
+  name: String,
+  image: String,
+  variant: String,
+  quantity: Number,
+  unitPrice: Number,
+  total: Number,
+});
 
-//     subtotal: Number,
-//     shipping: Number,
-//     total: Number,
-//     advancePaid: Number,
+const orderSchema = new mongoose.Schema(
+  {
+    name: String,
+    phone: String,
+    email: String,
+    address: String,
+    city: String,
+    state: String,
+    note: String,
 
-//     paymentMethod: {
-//       type: String,
-//       enum: ["payfast", "cod"],
-//     },
+    items: [itemSchema],
 
-//     paymentStatus: {
-//       type: String,
-//       enum: ["Paid", "Half Paid", "Pending"],
-//       default: "Pending",
-//     },
+    subtotal: Number,
+    shipping: Number,
+    total: Number,
+    advanceRequired: Number,
+    advancePaid: { type: Number, default: 0 },
 
-//     createdAt: {
-//       type: Date,
-//       default: Date.now,
-//     },
-//   },
-//   { timestamps: true }
-// );
+    paymentMethod: {
+      type: String,
+      enum: ["cod", "bank", "jazz"],
+      required: true,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["Pending", "Half Paid", "Paid", "Rejected"],
+      default: "Pending",
+    },
 
-// export default mongoose.model("Order", orderSchema);
+    paymentProofs: [proofSchema],
+    paymentInstructions: mongoose.Schema.Types.Mixed,
+  },
+  { timestamps: true }
+);
+
+// ❌ without mongoose.models check (same style as Product.js)
+export default mongoose.model("Order", orderSchema);
