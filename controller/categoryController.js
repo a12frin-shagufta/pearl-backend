@@ -13,7 +13,8 @@ const addCategory = async (req, res) => {
       return res.status(400).json({ success: false, message: "Category already exists." });
     }
 
-    const newCategory = new categoryModel({ name });
+    const newCategory = new categoryModel({ name: name.toString().trim().toLowerCase() });
+
     await newCategory.save();
 
     res.status(201).json({ success: true, message: "Category added successfully.", category: newCategory });

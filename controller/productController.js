@@ -107,25 +107,31 @@ const addProduct = async (req, res) => {
     }
 
     // Create product
-    const { name, price, category, subcategory, stock, bestseller, description, size } = req.body;
+    // Create product
+const { name, price, category, subcategory, stock, bestseller, description, size } = req.body;
 
-    if (!name || !price || !category || !stock) {
-      return res.status(400).json({ success: false, message: "Required fields missing" });
-    }
+if (!name || !price || !category || !stock) {
+  return res.status(400).json({ success: false, message: "Required fields missing" });
+}
 
-    const newProduct = new productModel({
-      name,
-      price: Number(price),
-      category,
-      subcategory,
-      stock: Number(stock),
-      bestseller: bestseller === "true" || bestseller === true,
-      description,
-      details: parsedDetails,
-      size,
-      variants,
-      faqs: parsedFaqs,
-    });
+// normalize category & subcategory (trim + lowercase)
+const normalizedCategory = (category || "").toString().trim().toLowerCase();
+const normalizedSubcategory = (subcategory || "").toString().trim().toLowerCase();
+
+const newProduct = new productModel({
+  name,
+  price: Number(price),
+  category: normalizedCategory,
+  subcategory: normalizedSubcategory,
+  stock: Number(stock),
+  bestseller: bestseller === "true" || bestseller === true,
+  description,
+  details: parsedDetails,
+  size,
+  variants,
+  faqs: parsedFaqs,
+});
+
 
     await newProduct.save();
     return res.status(201).json({ success: true, message: "Product added successfully." });
@@ -220,16 +226,17 @@ const updateProduct = async (req, res) => {
 
     // Update product
     const updateData = {
-      name,
-      price: Number(price),
-      category,
-      subcategory,
-      stock: Number(stock),
-      bestseller: bestseller === "true" || bestseller === true,
-      description,
-      details: parsedDetails,
-      faqs: parsedFaqs,
-    };
+  name,
+  price: Number(price),
+  category: (category || "").toString().trim().toLowerCase(),
+  subcategory: (subcategory || "").toString().trim().toLowerCase(),
+  stock: Number(stock),
+  bestseller: bestseller === "true" || bestseller === true,
+  description,
+  details: parsedDetails,
+  faqs: parsedFaqs,
+};
+
     if (variants) updateData.variants = variants;
 
     const updatedProduct = await productModel.findByIdAndUpdate(id, updateData, { new: true });
