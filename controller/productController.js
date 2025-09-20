@@ -8,24 +8,24 @@ import mongoose from "mongoose";
  * Upload helper to Cloudinary with retries.
  * Accepts any resource type; for videos we explicitly pass resource_type: 'video' when calling if desired.
  */
+// productController.js
 const uploadToCloudinary = async (filePath, originalName, resourceType = "auto", retries = 3, delay = 1000) => {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const options = {
         resource_type: resourceType,
         transformation: [
-          // For images this will resize if large; for videos Cloudinary ignores transform ops that don't apply.
           { width: 1200, height: 1200, crop: "limit" },
           { quality: "auto", fetch_format: "auto" },
         ],
       };
-      // For large video uploads you may want chunk_size & eager transformations; omitted for brevity
+      console.log(`Uploading ${originalName} to Cloudinary as ${resourceType}, attempt ${attempt + 1}`);
       const res = await cloudinary.uploader.upload(filePath, options);
+      console.log(`Uploaded ${originalName}: ${res.secure_url}`);
       return res.secure_url;
     } catch (err) {
-      if (attempt === retries - 1) {
-        throw err;
-      }
+      console.error(`Cloudinary upload failed for ${originalName}:`, err.message, err);
+      if (attempt === retries - 1) throw err;
       await new Promise((r) => setTimeout(r, delay));
     }
   }
