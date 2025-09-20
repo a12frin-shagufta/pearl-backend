@@ -1,9 +1,12 @@
 import mongoose from "mongoose";
 
+// variantSchema modifications
 const variantSchema = new mongoose.Schema({
   color: { type: String, required: true },
-  images: { type: [String], required: true }, // 1 image per color
+  images: { type: [String], required: true }, // keep existing
+  videos: { type: [String], default: [] },    // <-- new: optional videos for the variant
 });
+
 
 const productSchema = new mongoose.Schema(
   {

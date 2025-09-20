@@ -1,3 +1,4 @@
+// routes/productRouter.js
 import express from "express";
 import multer from "multer";
 import fs from "fs";
@@ -8,12 +9,12 @@ import {
   removeProduct,
   singleProduct,
   updateProduct,
-} from "../controller/productController.js";
+} from "../controller/productController.js"; // adjust path if necessary
 import verifyAdminToken from "../middleware/verifyAdminToken.js";
 
 const productRouter = express.Router();
 
-// tmp upload dir
+// Temporary uploads dir
 const UPLOAD_DIR = path.join(process.cwd(), "tmp", "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -25,48 +26,50 @@ const storage = multer.diskStorage({
   },
 });
 
-// Accept any image mimetype
-const imageFileFilter = (req, file, cb) => {
+// Accept image OR video mimetypes
+const mediaFileFilter = (req, file, cb) => {
   console.log(`Received file: ${file.originalname}, fieldname: ${file.fieldname}, mimetype: ${file.mimetype}, size: ${file.size} bytes`);
-  if (file && file.mimetype && file.mimetype.startsWith("image/")) {
+  if (file && file.mimetype && (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/"))) {
     cb(null, true);
   } else {
-    cb(new Error(`File "${file.originalname}" is not a valid image`), false);
+    cb(new Error(`File "${file.originalname}" is not a valid image or video`), false);
   }
 };
+
+const MAX_VARIANTS = 30;
+const uploadFields = [
+  ...Array.from({ length: MAX_VARIANTS }, (_, i) => ({ name: `variantImage${i}`, maxCount: 1 })),
+  ...Array.from({ length: MAX_VARIANTS }, (_, i) => ({ name: `variantVideo${i}`, maxCount: 1 })),
+];
 
 const upload = multer({
   storage,
-  fileFilter: imageFileFilter,
+  fileFilter: mediaFileFilter,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB per file
-    files: 30, // Max 30 variant images
+    fileSize: 100 * 1024 * 1024, // 100MB per file (adjust if needed)
+    files: MAX_VARIANTS * 2,
   },
-}).fields(Array.from({ length: 30 }, (_, i) => ({ name: `variantImage${i}`, maxCount: 1 })));
+}).fields(uploadFields);
 
-// Multer error handling middleware
+// multer error handling middleware
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
-    console.error(`Multer error: ${err.message}, Field: ${err.field || "unknown"}`);
-    console.log("All received fields:", {
-      body: Object.keys(req.body || {}),
-      files: Object.keys(req.files || {}),
-    });
-    return res.status(400).json({
-      success: false,
-      message: `Multer error: ${err.message}, Field: ${err.field || "unknown"}`,
-    });
+    console.error("MulterError:", err);
+    return res.status(400).json({ success: false, message: `Multer error: ${err.message}` });
+  } else if (err) {
+    console.error("Upload error:", err);
+    return res.status(400).json({ success: false, message: err.message || "Upload error" });
   }
-  next(err);
+  next();
 };
 
-// Log all incoming form fields
+// optional logger to help debugging
 const logFormFields = (req, res, next) => {
-  console.log("Incoming request:", {
+  console.log("Incoming product request:", {
     method: req.method,
-    url: req.url,
-    body: req.body ? Object.keys(req.body) : [],
-    files: req.files ? Object.keys(req.files) : [],
+    url: req.originalUrl,
+    bodyKeys: req.body ? Object.keys(req.body) : [],
+    filesKeys: req.files ? Object.keys(req.files) : [],
   });
   next();
 };
