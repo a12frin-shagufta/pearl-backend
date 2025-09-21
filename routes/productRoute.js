@@ -9,6 +9,7 @@ import {
   removeProduct,
   singleProduct,
   updateProduct,
+  decrementStock
 } from "../controller/productController.js"; // adjust path if necessary
 import verifyAdminToken from "../middleware/verifyAdminToken.js";
 
@@ -87,5 +88,7 @@ productRouter.post("/update", verifyAdminToken, logFormFields, upload, handleMul
 productRouter.get("/list", listProduct);
 productRouter.post("/single", singleProduct);
 productRouter.post("/remove", verifyAdminToken, removeProduct);
+productRouter.post("/decrement-stock", verifyAdminToken, decrementStock);
+
 
 export default productRouter;

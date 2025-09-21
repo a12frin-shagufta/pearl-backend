@@ -377,7 +377,39 @@ const singleProduct = async (req, res) => {
   }
 };
 
-export { addProduct, updateProduct, listProduct, removeProduct, singleProduct };
+const decrementStock = async (req, res) => {
+  try {
+    const { productId, color, quantity } = req.body;
+    if (!productId || !color || !quantity) {
+      return res.status(400).json({ success: false, message: "productId, color, and quantity are required." });
+    }
+
+    const product = await productModel.findById(productId);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found." });
+    }
+
+    const variant = product.variants.find((v) => v.color.toLowerCase() === color.toLowerCase());
+    if (!variant) {
+      return res.status(404).json({ success: false, message: "Variant not found." });
+    }
+
+    const newStock = Math.max(0, variant.stock - quantity);
+    if (newStock < 0) {
+      return res.status(400).json({ success: false, message: "Insufficient stock." });
+    }
+
+    variant.stock = newStock;
+    await product.save();
+
+    return res.status(200).json({ success: true, message: "Stock updated.", stock: newStock });
+  } catch (err) {
+    console.error("decrementStock error:", err);
+    return res.status(500).json({ success: false, message: err.message || "Failed to update stock." });
+  }
+};
+
+export { addProduct, updateProduct, listProduct, removeProduct, singleProduct , decrementStock };
 
 
 // import { v2 as cloudinary } from "cloudinary";
