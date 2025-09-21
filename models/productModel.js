@@ -1,11 +1,14 @@
 import mongoose from "mongoose";
 
 // variantSchema modifications
+// models/productModel.js (only the variant part shown)
 const variantSchema = new mongoose.Schema({
   color: { type: String, required: true },
-  images: { type: [String], required: true }, // keep existing
-  videos: { type: [String], default: [] },    // <-- new: optional videos for the variant
+  images: { type: [String], required: true },
+  videos: { type: [String], default: [] },
+  stock: { type: Number, default: 0 } // <-- new per-variant stock
 });
+
 
 
 const productSchema = new mongoose.Schema(

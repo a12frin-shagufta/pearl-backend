@@ -8,7 +8,6 @@ import mongoose from "mongoose";
  * Upload helper to Cloudinary with retries.
  * Accepts any resource type; for videos we explicitly pass resource_type: 'video' when calling if desired.
  */
-// productController.js
 const uploadToCloudinary = async (filePath, originalName, resourceType = "auto", retries = 3, delay = 1000) => {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
@@ -24,7 +23,7 @@ const uploadToCloudinary = async (filePath, originalName, resourceType = "auto",
       console.log(`Uploaded ${originalName}: ${res.secure_url}`);
       return res.secure_url;
     } catch (err) {
-      console.error(`Cloudinary upload failed for ${originalName}:`, err.message, err);
+      console.error(`Cloudinary upload failed for ${originalName}:`, err.message);
       if (attempt === retries - 1) throw err;
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -60,9 +59,42 @@ const parseMaybeJsonArray = (value) => {
 };
 
 /**
+ * Helper: read per-variant stocks from either:
+ *  - fields variantStock0, variantStock1, ...
+ *  - or a JSON array field 'variantStocks'
+ * Returns array of numbers (may be shorter than colorArray)
+ */
+const readVariantStocks = (req, colorArrayLength) => {
+  // attempt variantStocks JSON first
+  const variantStocksFromJson = req.body.variantStocks ? parseMaybeJsonArray(req.body.variantStocks) : null;
+  const stocks = new Array(colorArrayLength).fill(undefined);
+
+  if (variantStocksFromJson && variantStocksFromJson.length > 0) {
+    for (let i = 0; i < Math.min(colorArrayLength, variantStocksFromJson.length); i++) {
+      const s = variantStocksFromJson[i];
+      const n = Number(s);
+      stocks[i] = Number.isFinite(n) ? Math.max(0, n) : undefined;
+    }
+    return stocks;
+  }
+
+  // fall back to individual fields
+  for (let i = 0; i < colorArrayLength; i++) {
+    const key = `variantStock${i}`;
+    if (req.body[key] !== undefined) {
+      const n = Number(req.body[key]);
+      stocks[i] = Number.isFinite(n) ? Math.max(0, n) : undefined;
+    }
+  }
+
+  return stocks;
+};
+
+/**
  * Add Product
  * Expects:
  *  - req.body.colors  -> JSON string or array of color names (length N)
+ *  - Optionally: variantStock0, variantStock1, ... OR variantStocks (JSON array)
  *  - For each i in [0..N-1]:
  *      - file field 'variantImage{i}' (required) - image file
  *      - file field 'variantVideo{i}' (optional) - video file
@@ -72,7 +104,7 @@ const addProduct = async (req, res) => {
     // Basic fields
     const { name, price, category, subcategory, stock, bestseller, description, size } = req.body;
 
-    if (!name || !price || !category || !stock) {
+    if (!name || !price || !category || stock === undefined) {
       return res.status(400).json({ success: false, message: "Required fields missing (name, price, category, stock)." });
     }
 
@@ -83,6 +115,9 @@ const addProduct = async (req, res) => {
     if (!colorArray.length) {
       return res.status(400).json({ success: false, message: "At least one color variant is required (colors)." });
     }
+
+    // Collect per-variant stock values (may be undefined for some indexes)
+    const variantStocks = readVariantStocks(req, colorArray.length);
 
     // Collect files for each color
     const variantImageEntries = []; // index -> file
@@ -122,7 +157,6 @@ const addProduct = async (req, res) => {
     if (variantVideoEntries.length > 0) {
       const uploadedVideos = await Promise.all(
         variantVideoEntries.map((entry) =>
-          // Pass explicit resource_type 'video' — Cloudinary will handle encoding
           cloudinary.uploader.upload(entry.file.path, { resource_type: "video" }).then((r) => r.secure_url)
         )
       );
@@ -135,16 +169,18 @@ const addProduct = async (req, res) => {
     // Cleanup temp files
     [...variantImageEntries, ...variantVideoEntries].forEach(({ file }) => safeUnlink(file.path));
 
-    // Build variants array
+    // Build variants array (include per-variant stock if provided; fallback to product.stock)
+    const globalStockNumber = Number(stock) || 0;
     const variants = colorArray.map((color, i) => {
-      // find image URL that corresponds to index i
       const imgEntryIndex = variantImageEntries.findIndex((v) => v.index === i);
       const imageUrl = imgEntryIndex !== -1 ? uploadedImageUrls[imgEntryIndex] : null;
       const videos = uploadedVideoUrlsForIndex[i] || [];
+      const perVariantStock = typeof variantStocks[i] === "number" ? variantStocks[i] : globalStockNumber;
       return {
         color: String(color).trim(),
         images: imageUrl ? [imageUrl] : [],
         videos,
+        stock: perVariantStock,
       };
     });
 
@@ -162,7 +198,7 @@ const addProduct = async (req, res) => {
       price: Number(price),
       category: normalizedCategory,
       subcategory: normalizedSubcategory,
-      stock: Number(stock),
+      stock: globalStockNumber,
       bestseller: bestseller === "true" || bestseller === true,
       description,
       details: parsedDetails,
@@ -186,7 +222,7 @@ const addProduct = async (req, res) => {
  *  - Expects 'id' in body.
  *  - Accepts colors (parsedColors) to replace variants (or you can change to smarter merge).
  *  - Accepts variantImage{i} and variantVideo{i} for those indexes.
- *  - If a new image/video provided for index i, it will replace that variant's media (current code replaces whole variants if colors passed).
+ *  - Accepts per-variant stock via variantStock{i} fields or variantStocks JSON array.
  */
 const updateProduct = async (req, res) => {
   try {
@@ -207,6 +243,9 @@ const updateProduct = async (req, res) => {
 
     let variants;
     if (parsedColors.length > 0) {
+      // read per-variant stocks from body (variantStock{i} or variantStocks JSON)
+      const variantStocks = readVariantStocks(req, parsedColors.length);
+
       // Similar logic to addProduct: collect image/video files per index
       const variantImageEntries = [];
       const variantVideoEntries = [];
@@ -255,21 +294,24 @@ const updateProduct = async (req, res) => {
       // Cleanup temp files
       [...variantImageEntries, ...variantVideoEntries].forEach(({ file }) => safeUnlink(file.path));
 
+      const fallbackStock = req.body.stock ? Number(req.body.stock) : existing.stock || 0;
       variants = parsedColors.map((color, i) => {
         const imgEntryIndex = variantImageEntries.findIndex((v) => v.index === i);
         const imageUrl = imgEntryIndex !== -1 ? uploadedImageUrls[imgEntryIndex] : null;
         const videos = uploadedVideoUrlsForIndex[i] || [];
+        const perVariantStock = typeof variantStocks[i] === "number" ? variantStocks[i] : fallbackStock;
         return {
           color,
           images: imageUrl ? [imageUrl] : [],
           videos,
+          stock: perVariantStock,
         };
       });
     }
 
     // Build update object
     const updateData = {
-      name: req.body.name,
+      name: req.body.name ?? existing.name,
       price: req.body.price ? Number(req.body.price) : existing.price,
       category: req.body.category ? String(req.body.category).trim().toLowerCase() : existing.category,
       subcategory: req.body.subcategory ? String(req.body.subcategory).trim().toLowerCase() : existing.subcategory,
@@ -336,6 +378,7 @@ const singleProduct = async (req, res) => {
 };
 
 export { addProduct, updateProduct, listProduct, removeProduct, singleProduct };
+
 
 // import { v2 as cloudinary } from "cloudinary";
 // import productModel from "../models/productModel.js";
