@@ -16,11 +16,25 @@ import path from 'path';
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Define allowed origins (combine .env and dynamic Vercel preview URLs)
-const allowedOrigins = [
-  ...(process.env.ALLOWED_ORIGINS?.split(',') || []),
-  'http://localhost:5176', // Add missing local origin
+// Define allowed origins
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+  'http://localhost:5175',
+  'http://localhost:5174',
+  'https://pearl-admin-blush.vercel.app',
+  'https://peasent-pearl.vercel.app',
 ];
+
+// Middleware to log undefined origins
+app.use((req, res, next) => {
+  if (!req.headers.origin) {
+    console.warn('Request with undefined origin:', {
+      url: req.url,
+      method: req.method,
+      headers: req.headers,
+    });
+  }
+  next();
+});
 
 // CORS configuration
 app.use(
@@ -29,11 +43,6 @@ app.use(
       console.log('CORS check for:', origin);
       // Allow requests with no origin (e.g., Postman, server-side scripts)
       if (!origin) {
-        console.warn('Request with undefined origin:', {
-          url: req.url,
-          method: req.method,
-          headers: req.headers,
-        });
         return callback(null, true);
       }
       // Allow listed origins or Vercel preview URLs
@@ -45,9 +54,9 @@ app.use(
       }
       return callback(new Error(`Not allowed by CORS: ${origin}`));
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Ensure OPTIONS is included for preflight
-    allowedHeaders: ['Content-Type', 'Authorization'], // Match headers in your requests
-    credentials: true, // Support cookies/auth tokens
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   })
 );
 
@@ -65,7 +74,7 @@ app.use('/api/product', productRouter);
 app.use('/api/contact', contactRouter);
 app.use('/api/category', categoryRouter);
 app.use('/api/testimonials', testimonialRouter);
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'Uploads')));
 app.use('/api/order', orderRouter);
 
 // Test route
