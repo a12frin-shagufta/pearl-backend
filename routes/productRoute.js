@@ -88,7 +88,7 @@ productRouter.post("/update", verifyAdminToken, logFormFields, upload, handleMul
 productRouter.get("/list", listProduct);
 productRouter.post("/single", singleProduct);
 productRouter.post("/remove", verifyAdminToken, removeProduct);
-productRouter.post("/decrement-stock", verifyAdminToken, decrementStock);
+productRouter.post("/decrement-stock", decrementStock);
 
 
 export default productRouter;
