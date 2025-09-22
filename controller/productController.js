@@ -101,59 +101,41 @@ const readVariantStocks = (req, colorArrayLength) => {
  */
 const addProduct = async (req, res) => {
   try {
-    // Basic fields
     const { name, price, category, subcategory, stock, bestseller, description, size } = req.body;
 
     if (!name || !price || !category || stock === undefined) {
       return res.status(400).json({ success: false, message: "Required fields missing (name, price, category, stock)." });
     }
 
-    // parse colors array
-    let colorArray = parseMaybeJsonArray(req.body.colors);
-    colorArray = colorArray.map((c) => String(c).trim()).filter(Boolean);
-
+    let colorArray = parseMaybeJsonArray(req.body.colors).map((c) => String(c).trim()).filter(Boolean);
     if (!colorArray.length) {
       return res.status(400).json({ success: false, message: "At least one color variant is required (colors)." });
     }
 
-    // Collect per-variant stock values (may be undefined for some indexes)
     const variantStocks = readVariantStocks(req, colorArray.length);
 
-    // Collect files for each color
-    const variantImageEntries = []; // index -> file
-    const variantVideoEntries = []; // index -> file (optional)
+    const variantImageEntries = [];
+    const variantVideoEntries = [];
 
     for (let i = 0; i < colorArray.length; i++) {
       const imgKey = `variantImage${i}`;
       const vidKey = `variantVideo${i}`;
 
-      // image required
       if (!req.files || !req.files[imgKey] || !req.files[imgKey][0]) {
         return res.status(400).json({ success: false, message: `Missing image for color "${colorArray[i]}" (field ${imgKey}).` });
       }
-      const imgFile = req.files[imgKey][0];
-      if (!imgFile.mimetype || !imgFile.mimetype.startsWith("image/")) {
-        return res.status(400).json({ success: false, message: `File ${imgFile.originalname} is not a valid image.` });
-      }
-      variantImageEntries.push({ file: imgFile, index: i });
+      variantImageEntries.push({ file: req.files[imgKey][0], index: i });
 
-      // optional video
       if (req.files && req.files[vidKey] && req.files[vidKey][0]) {
-        const vidFile = req.files[vidKey][0];
-        if (!vidFile.mimetype || !vidFile.mimetype.startsWith("video/")) {
-          return res.status(400).json({ success: false, message: `File ${vidFile.originalname} is not a valid video.` });
-        }
-        variantVideoEntries.push({ file: vidFile, index: i });
+        variantVideoEntries.push({ file: req.files[vidKey][0], index: i });
       }
     }
 
-    // Upload images (parallel)
     const uploadedImageUrls = await Promise.all(
       variantImageEntries.map((entry) => uploadToCloudinary(entry.file.path, entry.file.originalname, "image"))
     );
 
-    // Upload videos (parallel) - if none, this step is skipped
-    const uploadedVideoUrlsForIndex = {}; // map index -> [urls]
+    const uploadedVideoUrlsForIndex = {};
     if (variantVideoEntries.length > 0) {
       const uploadedVideos = await Promise.all(
         variantVideoEntries.map((entry) =>
@@ -161,43 +143,28 @@ const addProduct = async (req, res) => {
         )
       );
       variantVideoEntries.forEach((entry, idx) => {
-        uploadedVideoUrlsForIndex[entry.index] = uploadedVideoUrlsForIndex[entry.index] || [];
-        uploadedVideoUrlsForIndex[entry.index].push(uploadedVideos[idx]);
+        uploadedVideoUrlsForIndex[entry.index] = [uploadedVideos[idx]];
       });
     }
 
-    // Cleanup temp files
     [...variantImageEntries, ...variantVideoEntries].forEach(({ file }) => safeUnlink(file.path));
 
-    // Build variants array (include per-variant stock if provided; fallback to product.stock)
     const globalStockNumber = Number(stock) || 0;
-    const variants = colorArray.map((color, i) => {
-      const imgEntryIndex = variantImageEntries.findIndex((v) => v.index === i);
-      const imageUrl = imgEntryIndex !== -1 ? uploadedImageUrls[imgEntryIndex] : null;
-      const videos = uploadedVideoUrlsForIndex[i] || [];
-      const perVariantStock = typeof variantStocks[i] === "number" ? variantStocks[i] : globalStockNumber;
-      return {
-        color: String(color).trim(),
-        images: imageUrl ? [imageUrl] : [],
-        videos,
-        stock: perVariantStock,
-      };
-    });
+    const variants = colorArray.map((color, i) => ({
+      color: String(color).trim(),
+      images: [uploadedImageUrls[i]],
+      videos: uploadedVideoUrlsForIndex[i] || [],
+      stock: typeof variantStocks[i] === "number" ? variantStocks[i] : globalStockNumber,
+    }));
 
-    // parse details/faqs if provided
     const parsedDetails = parseMaybeJsonArray(req.body.details);
     const parsedFaqs = parseMaybeJsonArray(req.body.faqs);
 
-    // Normalize category/subcategory
-    const normalizedCategory = (category || "").toString().trim().toLowerCase();
-    const normalizedSubcategory = (subcategory || "").toString().trim().toLowerCase();
-
-    // Create product doc
     const newProduct = new productModel({
       name,
       price: Number(price),
-      category: normalizedCategory,
-      subcategory: normalizedSubcategory,
+      category: (category || "").trim().toLowerCase(),
+      subcategory: (subcategory || "").trim().toLowerCase(),
       stock: globalStockNumber,
       bestseller: bestseller === "true" || bestseller === true,
       description,
@@ -208,10 +175,8 @@ const addProduct = async (req, res) => {
     });
 
     await newProduct.save();
-
     return res.status(201).json({ success: true, message: "Product added successfully.", product: newProduct });
   } catch (err) {
-    console.error("addProduct error:", err);
     return res.status(500).json({ success: false, message: err.message || "Server error while adding product." });
   }
 };
@@ -234,19 +199,14 @@ const updateProduct = async (req, res) => {
     const existing = await productModel.findById(id);
     if (!existing) return res.status(404).json({ success: false, message: "Product not found." });
 
-    // Parse fields (similar parsing helpers)
     const parsedDetails = parseMaybeJsonArray(req.body.details);
     const parsedFaqs = parseMaybeJsonArray(req.body.faqs);
-
-    // Parse colors (if provided, we will rebuild variants from provided files)
     let parsedColors = parseMaybeJsonArray(req.body.colors).map((c) => String(c).trim()).filter(Boolean);
 
     let variants;
     if (parsedColors.length > 0) {
-      // read per-variant stocks from body (variantStock{i} or variantStocks JSON)
       const variantStocks = readVariantStocks(req, parsedColors.length);
 
-      // Similar logic to addProduct: collect image/video files per index
       const variantImageEntries = [];
       const variantVideoEntries = [];
 
@@ -254,30 +214,20 @@ const updateProduct = async (req, res) => {
         const imgKey = `variantImage${i}`;
         const vidKey = `variantVideo${i}`;
 
-        if (!req.files || !req.files[imgKey] || !req.files[imgKey][0]) {
-          return res.status(400).json({ success: false, message: `Missing image for color "${parsedColors[i]}" (field ${imgKey}).` });
+        if (req.files && req.files[imgKey] && req.files[imgKey][0]) {
+          variantImageEntries.push({ file: req.files[imgKey][0], index: i });
         }
-        const imgFile = req.files[imgKey][0];
-        if (!imgFile.mimetype || !imgFile.mimetype.startsWith("image/")) {
-          return res.status(400).json({ success: false, message: `File ${imgFile.originalname} is not a valid image.` });
-        }
-        variantImageEntries.push({ file: imgFile, index: i });
-
         if (req.files && req.files[vidKey] && req.files[vidKey][0]) {
-          const vidFile = req.files[vidKey][0];
-          if (!vidFile.mimetype || !vidFile.mimetype.startsWith("video/")) {
-            return res.status(400).json({ success: false, message: `File ${vidFile.originalname} is not a valid video.` });
-          }
-          variantVideoEntries.push({ file: vidFile, index: i });
+          variantVideoEntries.push({ file: req.files[vidKey][0], index: i });
         }
       }
 
-      // Upload images
-      const uploadedImageUrls = await Promise.all(
-        variantImageEntries.map((entry) => uploadToCloudinary(entry.file.path, entry.file.originalname, "image"))
-      );
+      const uploadedImageUrls = variantImageEntries.length
+        ? await Promise.all(
+            variantImageEntries.map((entry) => uploadToCloudinary(entry.file.path, entry.file.originalname, "image"))
+          )
+        : [];
 
-      // Upload videos
       const uploadedVideoUrlsForIndex = {};
       if (variantVideoEntries.length > 0) {
         const uploadedVideos = await Promise.all(
@@ -286,30 +236,41 @@ const updateProduct = async (req, res) => {
           )
         );
         variantVideoEntries.forEach((entry, idx) => {
-          uploadedVideoUrlsForIndex[entry.index] = uploadedVideoUrlsForIndex[entry.index] || [];
-          uploadedVideoUrlsForIndex[entry.index].push(uploadedVideos[idx]);
+          uploadedVideoUrlsForIndex[entry.index] = [uploadedVideos[idx]];
         });
       }
 
-      // Cleanup temp files
       [...variantImageEntries, ...variantVideoEntries].forEach(({ file }) => safeUnlink(file.path));
 
       const fallbackStock = req.body.stock ? Number(req.body.stock) : existing.stock || 0;
+
       variants = parsedColors.map((color, i) => {
+        const colorNorm = String(color).trim();
         const imgEntryIndex = variantImageEntries.findIndex((v) => v.index === i);
         const imageUrl = imgEntryIndex !== -1 ? uploadedImageUrls[imgEntryIndex] : null;
-        const videos = uploadedVideoUrlsForIndex[i] || [];
-        const perVariantStock = typeof variantStocks[i] === "number" ? variantStocks[i] : fallbackStock;
+        const videosFromUpload = uploadedVideoUrlsForIndex[i] || [];
+
+        const existingMatch = (existing.variants || []).find(
+          (v) => String(v.color || "").toLowerCase() === colorNorm.toLowerCase()
+        );
+
+        const images = imageUrl ? [imageUrl] : existingMatch?.images || [];
+        const videos = videosFromUpload.length ? videosFromUpload : existingMatch?.videos || [];
+
+        const perVariantStock =
+          typeof variantStocks[i] === "number"
+            ? variantStocks[i]
+            : existingMatch?.stock ?? fallbackStock;
+
         return {
-          color,
-          images: imageUrl ? [imageUrl] : [],
+          color: colorNorm,
+          images,
           videos,
           stock: perVariantStock,
         };
       });
     }
 
-    // Build update object
     const updateData = {
       name: req.body.name ?? existing.name,
       price: req.body.price ? Number(req.body.price) : existing.price,
@@ -326,10 +287,8 @@ const updateProduct = async (req, res) => {
     if (req.body.size !== undefined) updateData.size = req.body.size;
 
     const updated = await productModel.findByIdAndUpdate(id, updateData, { new: true });
-
     return res.status(200).json({ success: true, message: "Product updated successfully", product: updated });
   } catch (err) {
-    console.error("updateProduct error:", err);
     return res.status(500).json({ success: false, message: err.message || "Failed to update product" });
   }
 };
