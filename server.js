@@ -74,7 +74,8 @@ app.use('/api/product', productRouter);
 app.use('/api/contact', contactRouter);
 app.use('/api/category', categoryRouter);
 app.use('/api/testimonials', testimonialRouter);
-app.use('/uploads', express.static(path.join(process.cwd(), 'Uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
 app.use('/api/order', orderRouter);
 
 // Test route
