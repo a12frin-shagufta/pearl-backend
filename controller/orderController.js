@@ -194,14 +194,17 @@ export const adminUpdatePayment = async (req, res) => {
         order.note = (order.note ? order.note + "\n\n" : "") + `Admin rejection reason: ${reason}`;
       }
 
-      emailSubject = "Payment Rejected — Please try again";
-      emailHtml = `
-        <h3>Payment Rejected</h3>
-        <p>Dear ${order.name || "Customer"},</p>
-        <p>Afsoos — aapki payment verification mein masla paaya gaya for Order <strong>${order._id}</strong>.</p>
-        <p>Please check your payment details / screenshot and try again. ${reason ? `<br><strong>Reason:</strong> ${reason}` : ""}</p>
-        <p>Humari team help ke liye available hai. Shukriya.</p>
-      `;
+      emailSubject = "Payment Rejected — Please Try Again";
+emailHtml = `
+  <h3>Payment Rejected</h3>
+  <p>Dear ${order.name || "Customer"},</p>
+  <p>Unfortunately, we found an issue while verifying your payment for Order <strong>${order._id}</strong>.</p>
+  <p>Please review your payment details or uploaded screenshot and try again. ${
+    reason ? `<br><strong>Reason:</strong> ${reason}` : ""
+  }</p>
+  <p>Our team is available to assist you if you need help. Thank you.</p>
+`;
+
     } else {
       return res.status(400).json({ success: false, message: "Invalid action" });
     }
