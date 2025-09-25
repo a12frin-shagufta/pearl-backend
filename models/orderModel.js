@@ -1,5 +1,13 @@
-// models/Order.js
+// models/orderModel.js
 import mongoose from "mongoose";
+
+const actionSchema = new mongoose.Schema({
+  action: { type: String, required: true }, // e.g. "confirm", "mark-half", "reject", "proof-upload"
+  adminId: { type: String },                // optional: admin user id or email
+  adminName: { type: String },
+  reason: { type: String },
+  at: { type: Date, default: Date.now },
+});
 
 const proofSchema = new mongoose.Schema({
   url: String,
@@ -47,14 +55,16 @@ const orderSchema = new mongoose.Schema(
       default: "Pending",
     },
 
-    transactionRef: { type: String },   // ✅ add this
-    senderLast4: { type: String }, 
+    transactionRef: { type: String },
+    senderLast4: { type: String },
 
     paymentProofs: [proofSchema],
     paymentInstructions: mongoose.Schema.Types.Mixed,
+
+    // <-- new
+    actionsHistory: { type: [actionSchema], default: [] },
   },
   { timestamps: true }
 );
 
-// ❌ without mongoose.models check (same style as Product.js)
-export default mongoose.model("Order", orderSchema);
+export default mongoose.models.Order || mongoose.model("Order", orderSchema);
