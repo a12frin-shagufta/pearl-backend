@@ -8,27 +8,31 @@ import mongoose from "mongoose";
  * Upload helper to Cloudinary with retries.
  * Accepts any resource type; for videos we explicitly pass resource_type: 'video' when calling if desired.
  */
+// controllers/productController.js
+
 const uploadToCloudinary = async (filePath, originalName, resourceType = "auto", retries = 3, delay = 1000) => {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const options = {
-        resource_type: resourceType,
-        transformation: [
-          { width: 1200, height: 1200, crop: "limit" },
-          { quality: "auto", fetch_format: "auto" },
-        ],
-      };
-      console.log(`Uploading ${originalName} to Cloudinary as ${resourceType}, attempt ${attempt + 1}`);
+      const options =
+        resourceType === "video"
+          ? { resource_type: "video" } // keep videos original; let Cloudinary handle formats
+          : {
+              resource_type: "image",
+              transformation: [
+                { width: 1200, height: 1200, crop: "limit" },
+                { quality: "auto", fetch_format: "auto" },
+              ],
+            };
+
       const res = await cloudinary.uploader.upload(filePath, options);
-      console.log(`Uploaded ${originalName}: ${res.secure_url}`);
       return res.secure_url;
     } catch (err) {
-      console.error(`Cloudinary upload failed for ${originalName}:`, err.message);
       if (attempt === retries - 1) throw err;
       await new Promise((r) => setTimeout(r, delay));
     }
   }
 };
+
 
 /**
  * Helper: safe unlink
@@ -114,48 +118,64 @@ const addProduct = async (req, res) => {
 
     const variantStocks = readVariantStocks(req, colorArray.length);
 
-    const variantImageEntries = [];
-    const variantVideoEntries = [];
+   // inside addProduct, after you build colorArray etc.
 
-    for (let i = 0; i < colorArray.length; i++) {
-      const imgKey = `variantImage${i}`;
-      const vidKey = `variantVideo${i}`;
+const variantImageEntries = [];
+const variantVideoEntries = [];
 
-      if (!req.files || !req.files[imgKey] || !req.files[imgKey][0]) {
-        return res.status(400).json({ success: false, message: `Missing image for color "${colorArray[i]}" (field ${imgKey}).` });
-      }
-      variantImageEntries.push({ file: req.files[imgKey][0], index: i });
+for (let i = 0; i < colorArray.length; i++) {
+  const imgKey = `variantImage${i}`;
+  const vidKey = `variantVideo${i}`;
 
-      if (req.files && req.files[vidKey] && req.files[vidKey][0]) {
-        variantVideoEntries.push({ file: req.files[vidKey][0], index: i });
-      }
-    }
+  if (req.files?.[imgKey]?.[0]) variantImageEntries.push({ file: req.files[imgKey][0], index: i });
+  if (req.files?.[vidKey]?.[0]) variantVideoEntries.push({ file: req.files[vidKey][0], index: i });
 
-    const uploadedImageUrls = await Promise.all(
-      variantImageEntries.map((entry) => uploadToCloudinary(entry.file.path, entry.file.originalname, "image"))
-    );
+  // ✅ validate at least one media exists for this index
+  if (!req.files?.[imgKey]?.[0] && !req.files?.[vidKey]?.[0]) {
+    return res.status(400).json({
+      success: false,
+      message: `Provide an image or a video for color "${colorArray[i]}" (fields ${imgKey} or ${vidKey}).`,
+    });
+  }
+}
 
-    const uploadedVideoUrlsForIndex = {};
-    if (variantVideoEntries.length > 0) {
-      const uploadedVideos = await Promise.all(
-        variantVideoEntries.map((entry) =>
-          cloudinary.uploader.upload(entry.file.path, { resource_type: "video" }).then((r) => r.secure_url)
-        )
-      );
-      variantVideoEntries.forEach((entry, idx) => {
-        uploadedVideoUrlsForIndex[entry.index] = [uploadedVideos[idx]];
-      });
-    }
+// Upload what we actually have
+const uploadedImageUrlsForIndex = {};
+if (variantImageEntries.length) {
+  const uploaded = await Promise.all(
+    variantImageEntries.map((entry) =>
+      uploadToCloudinary(entry.file.path, entry.file.originalname, "image")
+    )
+  );
+  variantImageEntries.forEach((entry, idx) => {
+    uploadedImageUrlsForIndex[entry.index] = [uploaded[idx]];
+  });
+}
 
-    [...variantImageEntries, ...variantVideoEntries].forEach(({ file }) => safeUnlink(file.path));
+const uploadedVideoUrlsForIndex = {};
+if (variantVideoEntries.length) {
+  const uploaded = await Promise.all(
+    variantVideoEntries.map((entry) =>
+      uploadToCloudinary(entry.file.path, entry.file.originalname, "video")
+    )
+  );
+  variantVideoEntries.forEach((entry, idx) => {
+    uploadedVideoUrlsForIndex[entry.index] = [uploaded[idx]];
+  });
+}
 
-    const globalStockNumber = Number(stock) || 0;
-    const variants = colorArray.map((color, i) => ({
-      color: String(color).trim(),
-      images: [uploadedImageUrls[i]],
-      videos: uploadedVideoUrlsForIndex[i] || [],
-      stock: typeof variantStocks[i] === "number" ? variantStocks[i] : globalStockNumber,
-    }));
+// cleanup temps
+[...variantImageEntries, ...variantVideoEntries].forEach(({ file }) => safeUnlink(file.path));
+
+const globalStockNumber = Number(stock) || 0;
+
+const variants = colorArray.map((color, i) => ({
+  color: String(color).trim(),
+  images: uploadedImageUrlsForIndex[i] || [],  // ✅ can be empty
+  videos: uploadedVideoUrlsForIndex[i] || [],  // ✅ can be only video
+  stock: typeof variantStocks[i] === "number" ? variantStocks[i] : globalStockNumber,
+}));
+
 
     const parsedDetails = parseMaybeJsonArray(req.body.details);
     const parsedFaqs = parseMaybeJsonArray(req.body.faqs);
@@ -286,7 +306,11 @@ const updateProduct = async (req, res) => {
     if (variants) updateData.variants = variants;
     if (req.body.size !== undefined) updateData.size = req.body.size;
 
-    const updated = await productModel.findByIdAndUpdate(id, updateData, { new: true });
+   const updated = await productModel.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    );
     return res.status(200).json({ success: true, message: "Product updated successfully", product: updated });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message || "Failed to update product" });

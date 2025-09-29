@@ -4,11 +4,17 @@ import mongoose from "mongoose";
 // models/productModel.js (only the variant part shown)
 const variantSchema = new mongoose.Schema({
   color: { type: String, required: true },
-  images: { type: [String], required: true },
+   images: { type: [String], default: [] },
   videos: { type: [String], default: [] },
   stock: { type: Number, default: 0 } // <-- new per-variant stock
 });
 
+// ✅ custom validator: at least 1 image OR video required
+variantSchema.path('videos').validate(function () {
+  const hasImages = Array.isArray(this.images) && this.images.length > 0;
+  const hasVideos = Array.isArray(this.videos) && this.videos.length > 0;
+  return hasImages || hasVideos;
+}, 'Each variant must have at least one image or video.');
 
 
 const productSchema = new mongoose.Schema(
