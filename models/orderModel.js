@@ -21,6 +21,7 @@ const itemSchema = new mongoose.Schema({
   name: String,
   image: String,
   variant: String,
+  variantColor: String,
   quantity: Number,
   unitPrice: Number,
   total: Number,

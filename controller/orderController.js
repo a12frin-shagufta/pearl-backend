@@ -10,42 +10,33 @@ import { sendEmail } from "../utils/SendEmail.js";
 export const createManualOrder = async (req, res) => {
   try {
     const {
-      name,
-      phone,
-      email,
-      address,
-      city,
-      state,
-      note,
-      paymentMethod,
-      items,
-      subtotal,
-      shipping,
-      total,
-      advanceRequired,
-      transactionRef,   // ✅ take from req.body
-      senderLast4,
-      paymentInstructions,
+      name, phone, email, address, city, state, note,
+      paymentMethod, items, subtotal, shipping, total,
+      advanceRequired, transactionRef, senderLast4, paymentInstructions,
     } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ success: false, message: "Cart empty" });
     }
 
+    // 👇 ensure variantColor is kept (and keep old 'variant' if present)
+    const safeItems = items.map(it => ({
+      productId: it.productId,
+      key: it.key,
+      name: it.name,
+      image: it.image,
+      variant: it.variant || "",                             // old field
+      variantColor: (it.variantColor || "").trim(),          // NEW field
+      quantity: Number(it.quantity || 0),
+      unitPrice: Number(it.unitPrice || 0),
+      total: Number(it.total || 0),
+    }));
+
     const order = new Order({
-      name,
-      phone,
-      email,
-      address,
-      city,
-      state,
-      note,
-      items,
-      subtotal,
-      shipping,
-      total,
-      transactionRef,   // ✅ save it
-      senderLast4, 
+      name, phone, email, address, city, state, note,
+      items: safeItems,                    // 👈 use sanitized items
+      subtotal, shipping, total,
+      transactionRef, senderLast4,
       advanceRequired,
       paymentMethod: paymentMethod || "cod",
       paymentInstructions: paymentInstructions || {},
