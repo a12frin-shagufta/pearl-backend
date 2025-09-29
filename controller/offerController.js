@@ -3,28 +3,46 @@ import Offer from "../models/offerModel.js";
 import Category from "../models/categoryModel.js";
 import mongoose from "mongoose";
 
+// controllers/offerController.js
 export const createOffer = async (req, res) => {
   try {
-    const { code, discountPercentage, description, expiresAt, categories = [], applyToSubcategories = false } = req.body;
+    const {
+      code,
+      description,
+      expiresAt,
+      categories = [],
+      applyToSubcategories = false,
+      discountRules = [], // 👈 from frontend
+    } = req.body;
 
-    // validate categories are ObjectIds (optional)
+    if (!discountRules.length) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one discount rule is required",
+      });
+    }
+
+    // validate category ids
     const validCategoryIds = [];
     for (const c of categories) {
       if (mongoose.Types.ObjectId.isValid(c)) validCategoryIds.push(c);
-      else return res.status(400).json({ success: false, message: `Invalid category id: ${c}` });
     }
 
     const newOffer = new Offer({
       code,
-      discountPercentage,
       description,
       expiresAt,
       categories: validCategoryIds,
-      applyToSubcategories
+      applyToSubcategories,
+      discountRules,
     });
 
     await newOffer.save();
-    res.status(201).json({ success: true, message: "Offer created", offer: newOffer });
+    res.status(201).json({
+      success: true,
+      message: "Offer created",
+      offer: newOffer,
+    });
   } catch (error) {
     console.error("Error creating offer:", error);
     res.status(500).json({ success: false, message: error.message });

@@ -35,8 +35,16 @@ const productSchema = new mongoose.Schema(
         answer: { type: String, required: true },
       },
     ],
+
+    // 👇 NEW FIELD
+    difficulty: {
+      type: String,
+      enum: ["easy", "medium", "difficult"],
+      default: "easy"
+    }
   },
   { timestamps: true }
 );
+
 
 export default mongoose.model("Product", productSchema);

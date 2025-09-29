@@ -1,17 +1,33 @@
 // models/offerModel.js
 import mongoose from "mongoose";
 
-const offerSchema = new mongoose.Schema({
-  code: { type: String, required: true, unique: true },
-  discountPercentage: { type: Number, required: true }, // e.g., 10
-  description: { type: String },
-  active: { type: Boolean, default: true },
-  expiresAt: { type: Date }, // optional expiry date
-  // NEW: categories the offer applies to (if empty -> global)
-  categories: [{ type: mongoose.Schema.Types.ObjectId, ref: "Category" }],
-  // NEW: whether offer applies to subcategories of the selected categories
-  applyToSubcategories: { type: Boolean, default: false }
-}, { timestamps: true });
+const offerSchema = new mongoose.Schema(
+  {
+    code: { type: String, required: true, unique: true },
+    description: { type: String },
+    active: { type: Boolean, default: true },
+    expiresAt: { type: Date },
 
-const Offer = mongoose.models.Offer || mongoose.model("Offer", offerSchema);
+    // categories this offer applies to
+    categories: [{ type: mongoose.Schema.Types.ObjectId, ref: "Category" }],
+    applyToSubcategories: { type: Boolean, default: false },
+
+    // NEW: multiple rules based on difficulty
+    discountRules: [
+      {
+        difficulty: {
+          type: String,
+          enum: ["easy", "medium", "difficult"], // you can expand if needed
+          required: true,
+        },
+        discountPercentage: { type: Number, required: true }, // e.g. 20
+      },
+    ],
+  },
+  { timestamps: true }
+);
+
+const Offer =
+  mongoose.models.Offer || mongoose.model("Offer", offerSchema);
+
 export default Offer;

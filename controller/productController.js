@@ -105,7 +105,7 @@ const readVariantStocks = (req, colorArrayLength) => {
  */
 const addProduct = async (req, res) => {
   try {
-    const { name, price, category, subcategory, stock, bestseller, description, size } = req.body;
+    const { name, price, category, subcategory, stock, bestseller, description, size, difficulty } = req.body;
 
     if (!name || !price || !category || stock === undefined) {
       return res.status(400).json({ success: false, message: "Required fields missing (name, price, category, stock)." });
@@ -192,6 +192,7 @@ const variants = colorArray.map((color, i) => ({
       size,
       variants,
       faqs: parsedFaqs,
+       difficulty: (difficulty || "easy").toLowerCase(),
     });
 
     await newProduct.save();
@@ -301,6 +302,7 @@ const updateProduct = async (req, res) => {
       description: req.body.description ?? existing.description,
       details: parsedDetails.length ? parsedDetails : existing.details,
       faqs: parsedFaqs.length ? parsedFaqs : existing.faqs,
+       difficulty: req.body.difficulty || existing.difficulty
     };
 
     if (variants) updateData.variants = variants;
