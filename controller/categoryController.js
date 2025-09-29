@@ -62,4 +62,47 @@ const listCategories = async (req, res) => {
   }
 };
 
-export { addCategory, listCategories , addSubcategory };
+
+const deleteCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ success: false, message: "Category ID required" });
+
+    const category = await categoryModel.findByIdAndDelete(id);
+    if (!category) {
+      return res.status(404).json({ success: false, message: "Category not found" });
+    }
+
+    res.status(200).json({ success: true, message: "Category deleted successfully" });
+  } catch (error) {
+    console.error("Error in deleteCategory:", error);
+    res.status(500).json({ success: false, message: "Failed to delete category" });
+  }
+};
+
+// Delete subcategory
+const deleteSubcategory = async (req, res) => {
+  try {
+    const { categoryId, subcategory } = req.body;
+    if (!categoryId || !subcategory) {
+      return res.status(400).json({ success: false, message: "Category ID and subcategory required" });
+    }
+
+    const category = await categoryModel.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ success: false, message: "Category not found" });
+    }
+
+    category.subcategories = category.subcategories.filter(
+      (s) => s.toLowerCase() !== subcategory.toLowerCase()
+    );
+
+    await category.save();
+    res.status(200).json({ success: true, message: "Subcategory deleted successfully", category });
+  } catch (error) {
+    console.error("Error in deleteSubcategory:", error);
+    res.status(500).json({ success: false, message: "Failed to delete subcategory" });
+  }
+};
+
+export { addCategory, listCategories , addSubcategory , deleteCategory, deleteSubcategory };
