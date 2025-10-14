@@ -10,25 +10,37 @@ import mongoose from "mongoose";
  */
 // controllers/productController.js
 
+// controllers/productController.js
 const uploadToCloudinary = async (filePath, originalName, resourceType = "auto", retries = 3, delay = 1000) => {
-  const isPng = originalName?.toLowerCase().endsWith(".png");
+  const ext = originalName?.split(".").pop()?.toLowerCase() || "";
+  const supportedImageExts = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp", "tiff"];
 
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const options =
-        resourceType === "video"
-          ? { resource_type: "video" }
-          : {
-              resource_type: "image",
-              format: isPng ? "png" : "auto", // 👈 keeps PNG safe
-              transformation: [
-                { width: 1200, height: 1200, crop: "limit" },
-                { quality: "auto" },
-              ],
-            };
+      let options;
+
+      if (resourceType === "video") {
+        options = { resource_type: "video" };
+      } else if (supportedImageExts.includes(ext)) {
+        // ✅ All image formats handled here
+        options = {
+          resource_type: "image",
+          format: ext, // use same format as original
+          transformation: [
+            { width: 1200, height: 1200, crop: "limit" },
+            { quality: "auto", fetch_format: "auto" }, // Cloudinary will auto-optimize output
+          ],
+        };
+      } else {
+        // fallback for unknown types (Cloudinary detects automatically)
+        options = {
+          resource_type: "auto",
+          transformation: [{ quality: "auto" }],
+        };
+      }
 
       const res = await cloudinary.uploader.upload(filePath, options);
-      console.log(`✅ Uploaded ${originalName} to Cloudinary`);
+      console.log(`✅ Uploaded ${originalName} (${ext}) to Cloudinary`);
       return res.secure_url;
     } catch (err) {
       console.error(`❌ Cloudinary upload failed for ${originalName} (attempt ${attempt + 1}): ${err.message}`);

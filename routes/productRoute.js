@@ -37,17 +37,15 @@ const mediaFileFilter = (req, file, cb) => {
   const mime = file.mimetype?.toLowerCase() || "";
   const ext = path.extname(file.originalname || "").toLowerCase();
 
-  const imageExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
-  const videoExts = [".mp4", ".mov", ".avi", ".mkv"];
+  const allowedExts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".heic", ".mp4", ".mov", ".avi", ".mkv"];
+  const isAllowed = allowedExts.includes(ext) || mime.startsWith("image/") || mime.startsWith("video/");
 
-  const isImage = mime.startsWith("image/") || imageExts.includes(ext);
-  const isVideo = mime.startsWith("video/") || videoExts.includes(ext);
+  console.log(`📸 Received file: ${file.originalname}, mime: ${mime}, ext: ${ext}`);
 
-  console.log(`📸 Received file: ${file.originalname}, type: ${mime}, ext: ${ext}`);
-
-  if (isImage || isVideo) return cb(null, true);
-  cb(new Error(`❌ Invalid file type: ${file.originalname} (${mime})`), false);
+  if (isAllowed) cb(null, true);
+  else cb(new Error(`❌ Invalid file type: ${file.originalname} (${mime})`), false);
 };
+
 
 
 
