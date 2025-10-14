@@ -11,27 +11,33 @@ import mongoose from "mongoose";
 // controllers/productController.js
 
 const uploadToCloudinary = async (filePath, originalName, resourceType = "auto", retries = 3, delay = 1000) => {
+  const isPng = originalName?.toLowerCase().endsWith(".png");
+
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const options =
         resourceType === "video"
-          ? { resource_type: "video" } // keep videos original; let Cloudinary handle formats
+          ? { resource_type: "video" }
           : {
               resource_type: "image",
+              format: isPng ? "png" : "auto", // 👈 keeps PNG safe
               transformation: [
                 { width: 1200, height: 1200, crop: "limit" },
-                { quality: "auto", fetch_format: "auto" },
+                { quality: "auto" },
               ],
             };
 
       const res = await cloudinary.uploader.upload(filePath, options);
+      console.log(`✅ Uploaded ${originalName} to Cloudinary`);
       return res.secure_url;
     } catch (err) {
+      console.error(`❌ Cloudinary upload failed for ${originalName} (attempt ${attempt + 1}): ${err.message}`);
       if (attempt === retries - 1) throw err;
       await new Promise((r) => setTimeout(r, delay));
     }
   }
 };
+
 
 
 /**

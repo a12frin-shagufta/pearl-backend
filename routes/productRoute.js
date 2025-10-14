@@ -34,14 +34,21 @@ const storage = multer.diskStorage({
 // Accept image OR video mimetypes
 // productRouter.js
 const mediaFileFilter = (req, file, cb) => {
-  console.log(`Received file: ${file.originalname}, fieldname: ${file.fieldname}, mimetype: ${file.mimetype}, size: ${file.size} bytes`);
-  if (file && file.mimetype && (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/"))) {
-    cb(null, true);
-  } else {
-    console.error(`Invalid file: ${file.originalname}, mimetype: ${file.mimetype}`);
-    cb(new Error(`File "${file.originalname}" is not a valid image or video`), false);
-  }
+  const mime = file.mimetype?.toLowerCase() || "";
+  const ext = path.extname(file.originalname || "").toLowerCase();
+
+  const imageExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+  const videoExts = [".mp4", ".mov", ".avi", ".mkv"];
+
+  const isImage = mime.startsWith("image/") || imageExts.includes(ext);
+  const isVideo = mime.startsWith("video/") || videoExts.includes(ext);
+
+  console.log(`📸 Received file: ${file.originalname}, type: ${mime}, ext: ${ext}`);
+
+  if (isImage || isVideo) return cb(null, true);
+  cb(new Error(`❌ Invalid file type: ${file.originalname} (${mime})`), false);
 };
+
 
 
 const MAX_VARIANTS = 30;
