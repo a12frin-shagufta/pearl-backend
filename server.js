@@ -16,7 +16,7 @@ import path from 'path';
 const app = express();
 const port = process.env.PORT || 5002;
 
-// Define allowed origins
+// Define allowed offrigins
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
   'http://localhost:5175',
   'http://localhost:5174',
