@@ -14,7 +14,7 @@ import orderRouter from './routes/orderRoute.js';
 import path from 'path';
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5002;
 
 // Define allowed origins
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
