@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import Order from "../models/orderModel.js";
 import { sendEmail } from "../utils/SendEmail.js";
-import cloudinary from 'cloudinary'
+ import cloudinary from '../config/cloudinary.js'
 
 
 // Create manual order
@@ -93,7 +93,7 @@ export const uploadProof = async (req, res) => {
     // Upload to Cloudinary
     console.log("[uploadProof] Uploading to Cloudinary:", { orderId, filename: req.file.originalname });
     const result = await new Promise((resolve, reject) => {
-      const stream = cloudinary.v2.uploader.upload_stream(
+      const stream = cloudinary.uploader.upload_stream(
         { resource_type: "auto", folder: "payment_proofs" },
         (error, result) => {
           if (error) reject(error);
