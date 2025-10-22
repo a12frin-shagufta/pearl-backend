@@ -85,8 +85,15 @@ export const uploadProof = async (req, res) => {
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
     // ensure uploads folder is served statically from /uploads in server
-    const fileUrl = `/uploads/${req.file.filename}`;
-    order.paymentProofs.push({ url: fileUrl, filename: req.file.filename });
+ // Build ABSOLUTE URL instead of relative
+const proto = req.headers["x-forwarded-proto"] || req.protocol;
+const host = req.get("host");
+const relative = `/uploads/${req.file.filename}`;
+const absoluteUrl = `${proto}://${host}${relative}`;
+
+// Save full URL in DB, so frontend doesn't break
+order.paymentProofs.push({ url: absoluteUrl, filename: req.file.filename });
+
     // also update transactionRef / senderLast4 if passed in form-data
     if (req.body.transactionRef) order.transactionRef = req.body.transactionRef;
     if (req.body.senderLast4) order.senderLast4 = req.body.senderLast4;

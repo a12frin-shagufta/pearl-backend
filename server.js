@@ -12,9 +12,14 @@ import categoryRouter from './routes/categoryRoute.js';
 import testimonialRouter from './routes/testimonialRoute.js';
 import orderRouter from './routes/orderRoute.js';
 import path from 'path';
+import { fileURLToPath } from "url";
 
 const app = express();
 const port = process.env.PORT || 5002;
+
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
 // Define allowed offrigins
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
@@ -74,7 +79,7 @@ app.use('/api/product', productRouter);
 app.use('/api/contact', contactRouter);
 app.use('/api/category', categoryRouter);
 app.use('/api/testimonials', testimonialRouter);
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use('/api/order', orderRouter);
 
