@@ -1,9 +1,5 @@
-// routes/orderRoute.js
 import express from "express";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
-import { fileURLToPath } from "url";
 import {
   createManualOrder,
   uploadProof,
@@ -13,29 +9,27 @@ import {
 
 const orderRouter = express.Router();
 
-// ✅ Stable absolute path: <projectRoot>/uploads
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
-const uploadDir  = path.join(__dirname, "..", "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, `${Date.now()}_${file.originalname}`),
+// Use memory storage for Cloudinary
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/png", "application/pdf"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only JPG, PNG, or PDF files are allowed"));
+    }
+  },
 });
-const upload = multer({ storage, limits: { fileSize: 15 * 1024 * 1024 } });
 
 orderRouter.post("/place-manual", createManualOrder);
-orderRouter.post("/upload-proof", upload.single("proof"), uploadProof); // field name must be "proof"
+orderRouter.post("/upload-proof", upload.single("proof"), uploadProof);
 orderRouter.post("/admin/confirm-payment", adminUpdatePayment);
 orderRouter.get("/all", getAllOrders);
 
 export default orderRouter;
-
-
-
 
 // // routes/orderRoute.js
 // import express from "express";

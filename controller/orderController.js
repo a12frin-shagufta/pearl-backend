@@ -78,45 +78,54 @@ export const createManualOrder = async (req, res) => {
 
 // Upload proof for order (bank/jazz)
 // controllers/orderController.js
-// controllers/orderController.js
 export const uploadProof = async (req, res) => {
   try {
-    const { orderId } = req.body;
-    if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+    const { orderId, transactionRef, senderLast4 } = req.body;
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file uploaded" });
+    }
 
     const order = await Order.findById(orderId);
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
 
-    const proto = req.headers["x-forwarded-proto"] || req.protocol;
-    const host  = req.get("host");
-    const relative = `/uploads/${req.file.filename}`;
-    const absoluteUrl = `${proto}://${host}${relative}`;
+    // Upload to Cloudinary
+    console.log("[uploadProof] Uploading to Cloudinary:", { orderId, filename: req.file.originalname });
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.v2.uploader.upload_stream(
+        { resource_type: "auto", folder: "payment_proofs" },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      stream.end(req.file.buffer);
+    });
 
-    // ✅ push proof
-    order.paymentProofs.push({ url: absoluteUrl, filename: req.file.filename });
-    if (req.body.transactionRef) order.transactionRef = req.body.transactionRef;
-    if (req.body.senderLast4)   order.senderLast4   = req.body.senderLast4;
-    order.paymentStatus = order.paymentStatus || "Pending";
-
+    // Save proof to order
+    const absoluteUrl = result.secure_url;
+    order.paymentProofs.push({ url: absoluteUrl, filename: req.file.originalname });
+    if (transactionRef) order.transactionRef = transactionRef;
+    if (senderLast4) order.senderLast4 = senderLast4;
+    if (!order.paymentStatus || order.paymentStatus === "Pending") {
+      order.paymentStatus = "Pending";
+    }
     await order.save();
 
-    // ✅ log to server console for certainty
-    console.log("uploadProof saved:", order._id.toString(), absoluteUrl, "proofs:", order.paymentProofs.length);
+    console.log("[uploadProof] Success:", { fileUrl: absoluteUrl, orderId });
 
-    // ✅ return the updated order so you can see the array in the response
     return res.json({
       success: true,
       message: "Proof uploaded",
       fileUrl: absoluteUrl,
       orderId: order._id,
-      order, // <— includes paymentProofs
     });
   } catch (err) {
-    console.error("upload-proof error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("[uploadProof] Error:", err);
+    return res.status(500).json({ success: false, message: err.message || "Server error" });
   }
 };
-
 
 
 // Admin: confirm/reject/mark-half payment
