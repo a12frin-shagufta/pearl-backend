@@ -76,73 +76,49 @@ export const createManualOrder = async (req, res) => {
 
 
 // Upload proof for order (bank/jazz)
+// controllers/orderController.js
 export const uploadProof = async (req, res) => {
   try {
     const { orderId } = req.body;
-    if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file uploaded" });
+    }
 
     const order = await Order.findById(orderId);
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
 
-    // ensure uploads folder is served statically from /uploads in server
- // Build ABSOLUTE URL instead of relative
-const proto = req.headers["x-forwarded-proto"] || req.protocol;
-const host = req.get("host");
-const relative = `/uploads/${req.file.filename}`;
-const absoluteUrl = `${proto}://${host}${relative}`;
+    // Build absolute URL that works behind Nginx/HTTPS
+    const proto = req.headers["x-forwarded-proto"] || req.protocol;
+    const host  = req.get("host");
+    const relative = `/uploads/${req.file.filename}`;
+    const absoluteUrl = `${proto}://${host}${relative}`;
 
-// Save full URL in DB, so frontend doesn't break
-order.paymentProofs.push({ url: absoluteUrl, filename: req.file.filename });
-
-    // also update transactionRef / senderLast4 if passed in form-data
+    // Save proof + optional fields
+    order.paymentProofs.push({ url: absoluteUrl, filename: req.file.filename });
     if (req.body.transactionRef) order.transactionRef = req.body.transactionRef;
-    if (req.body.senderLast4) order.senderLast4 = req.body.senderLast4;
-    // set paymentStatus to PendingReview (optional) or keep as-is: we'll keep "Pending"
-    order.paymentStatus = "Pending";
+    if (req.body.senderLast4)   order.senderLast4   = req.body.senderLast4;
+    if (!order.paymentStatus || order.paymentStatus === "Pending") {
+      order.paymentStatus = "Pending";
+    }
     await order.save();
 
-    // Notify customer that proof is received and under review
-    try {
-      await sendEmail({
-        to: order.email,
-        subject: "Payment Proof Received — We are verifying",
-        html: `
-          <h3>Payment proof received</h3>
-          <p>Dear ${order.name || "Customer"},</p>
-          <p>We have received your payment proof for Order <strong>${order._id}</strong>. Our team will verify the proof and update you shortly.</p>
-          <p>If everything is fine, your order will be confirmed. If there is an issue, we may ask you to re-send proof or correct details.</p>
-          <p>Thank you for shopping with <strong>Your Company Name</strong>.</p>
-        `
-      });
-    } catch (mailErr) {
-      console.error("uploadProof: failed to send customer email:", mailErr);
-    }
+    // ✅ Respond immediately — do NOT await any email here
+    return res.json({
+      success: true,
+      message: "Proof uploaded",
+      fileUrl: absoluteUrl,
+      orderId: order._id,
+    });
 
-    // Optional: notify admin (if you have ADMIN_EMAIL set)
-    if (process.env.ADMIN_EMAIL) {
-      try {
-        await sendEmail({
-          to: process.env.ADMIN_EMAIL,
-          subject: `Payment proof uploaded — Order ${order._id}`,
-          html: `
-            <p>Payment proof uploaded for Order <strong>${order._id}</strong>.</p>
-            <p>Customer: ${order.name} (${order.email})</p>
-            <p>Transaction Ref: ${order.transactionRef || "—"}</p>
-            <p>Sender last4: ${order.senderLast4 || "—"}</p>
-            <p><a href="${process.env.SITE_URL || ''}/admin/orders/${order._id}">Open order in admin panel</a></p>
-          `
-        });
-      } catch (adminMailErr) {
-        console.error("uploadProof: failed to send admin email:", adminMailErr);
-      }
-    }
-
-    return res.json({ success: true, message: "Proof uploaded", fileUrl });
+    // If you want emails later, send them after response with setImmediate (disabled for now)
   } catch (err) {
     console.error("upload-proof error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
 
 // Admin: confirm/reject/mark-half payment
 // controllers/orderController.js (replace adminUpdatePayment)
