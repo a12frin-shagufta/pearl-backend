@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import Order from "../models/orderModel.js";
 import { sendEmail } from "../utils/SendEmail.js";
+import cloudinary from 'cloudinary'
 
 
 // Create manual order
@@ -77,47 +78,45 @@ export const createManualOrder = async (req, res) => {
 
 // Upload proof for order (bank/jazz)
 // controllers/orderController.js
+// controllers/orderController.js
 export const uploadProof = async (req, res) => {
   try {
     const { orderId } = req.body;
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
 
     const order = await Order.findById(orderId);
-    if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
-    }
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-    // Build absolute URL that works behind Nginx/HTTPS
     const proto = req.headers["x-forwarded-proto"] || req.protocol;
     const host  = req.get("host");
     const relative = `/uploads/${req.file.filename}`;
     const absoluteUrl = `${proto}://${host}${relative}`;
 
-    // Save proof + optional fields
+    // ✅ push proof
     order.paymentProofs.push({ url: absoluteUrl, filename: req.file.filename });
     if (req.body.transactionRef) order.transactionRef = req.body.transactionRef;
     if (req.body.senderLast4)   order.senderLast4   = req.body.senderLast4;
-    if (!order.paymentStatus || order.paymentStatus === "Pending") {
-      order.paymentStatus = "Pending";
-    }
+    order.paymentStatus = order.paymentStatus || "Pending";
+
     await order.save();
 
-    // ✅ Respond immediately — do NOT await any email here
+    // ✅ log to server console for certainty
+    console.log("uploadProof saved:", order._id.toString(), absoluteUrl, "proofs:", order.paymentProofs.length);
+
+    // ✅ return the updated order so you can see the array in the response
     return res.json({
       success: true,
       message: "Proof uploaded",
       fileUrl: absoluteUrl,
       orderId: order._id,
+      order, // <— includes paymentProofs
     });
-
-    // If you want emails later, send them after response with setImmediate (disabled for now)
   } catch (err) {
     console.error("upload-proof error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
 
 
 // Admin: confirm/reject/mark-half payment
