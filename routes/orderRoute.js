@@ -25,7 +25,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, `${Date.now()}_${file.originalname}`),
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 15 * 1024 * 1024 } });
 
 orderRouter.post("/place-manual", createManualOrder);
 orderRouter.post("/upload-proof", upload.single("proof"), uploadProof); // field name must be "proof"
