@@ -1,12 +1,15 @@
-import {v2 as cloudinary} from "cloudinary"
+// /var/www/pleasantpearl/config/cloudinary.js
+import { v2 as cloudinary } from "cloudinary";
 
-const connectCloudinary = async () => {
-  cloudinary.config(({
-    cloud_name: process.env.CLOUDINARY_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_SECRET_KEY
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_NAME,        // dpp74uypv
+  api_key:    process.env.CLOUDINARY_API_KEY,     // 178635946195658
+  api_secret: process.env.CLOUDINARY_SECRET_KEY,  // LSn560HaaPWBAahjXwp-UbeJQ5o
+  secure: true,
+});
 
-  }))
-}
+// quick sanity log at boot (one-time)
+console.log("[cloudinary] init ok:",
+  { name: process.env.CLOUDINARY_NAME, hasUploader: !!cloudinary.uploader });
 
-export default connectCloudinary;
+export default cloudinary;

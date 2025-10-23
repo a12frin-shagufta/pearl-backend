@@ -100,6 +100,12 @@ export const uploadProof = async (req, res) => {
       stream.end(req.file.buffer);
     });
 
+    if (!cloudinary?.uploader?.upload_stream) {
+  console.error("[uploadProof] cloudinary instance invalid:", cloudinary);
+  return res.status(500).json({ success:false, message:"Cloudinary not initialized" });
+}
+
+
     // Save proof to order
     const absoluteUrl = result.secure_url;
     order.paymentProofs.push({ url: absoluteUrl, filename: req.file.originalname });
