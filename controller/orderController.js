@@ -4,6 +4,8 @@ import fs from "fs";
 import Order from "../models/orderModel.js";
 import { sendEmail } from "../utils/SendEmail.js";
 import cloudinary from "../config/cloudinary.js"
+import mongoose from "mongoose";
+
 
 
 // Create manual order
