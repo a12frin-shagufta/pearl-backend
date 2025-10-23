@@ -5,6 +5,7 @@ import {
   uploadProof,
   adminUpdatePayment,
   getAllOrders,
+  requestProofAgain
 } from "../controller/orderController.js";
 
 const orderRouter = express.Router();
@@ -31,6 +32,9 @@ orderRouter.post("/admin/confirm-payment", async (req, res, next) => {
   console.log("[admin/confirm-payment] body:", req.body);
   next();
 }, adminUpdatePayment);
+
+
+ orderRouter.post("/admin/request-proof", requestProofAgain);
 
 orderRouter.get("/all", getAllOrders);
 

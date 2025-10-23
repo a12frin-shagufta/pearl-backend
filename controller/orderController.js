@@ -251,6 +251,62 @@ export const adminUpdatePayment = async (req, res) => {
 };
 
 
+
+// Ask customer to re-upload payment proof
+export const requestProofAgain = async (req, res) => {
+  try {
+    const orderId = String(req.body.orderId || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ success: false, message: "Invalid orderId" });
+    }
+
+    const order = await Order.findById(orderId).lean();
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (!order.email) return res.status(400).json({ success: false, message: "No customer email on file" });
+
+    // Where should the customer upload proof?
+    // FRONTEND_URL: e.g. https://pleasantpearl.com
+    // Your frontend must have a page/route that lets them upload by orderId
+    const base = process.env.CUSTOMER_PORTAL_URL || process.env.SITE_URL || process.env.FRONTEND_URL || "";
+    const uploadLink = `${base.replace(/\/+$/,"")}/upload-proof?order=${order._id}`;
+
+    const subject = "Action Needed: Please upload your payment proof";
+    const html = `
+      <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif">
+        <h2>Hi ${order.name || "there"},</h2>
+        <p>We couldn’t verify the payment proof for your order <strong>${order._id}</strong>.</p>
+        <p>Please upload the payment screenshot or PDF again using the secure link below:</p>
+        <p><a href="${uploadLink}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#0ea5e9;color:#fff;text-decoration:none">Upload payment proof</a></p>
+        <p>If the button doesn’t work, copy & paste this link:<br>
+        <a href="${uploadLink}">${uploadLink}</a></p>
+        <p>Thanks!<br>${process.env.COMPANY_NAME || "Pleasant Pearl"}</p>
+      </div>
+    `;
+
+    // Fire-and-forget email
+    sendEmail({ to: order.email, subject, html })
+      .catch(e => console.error("[requestProofAgain] sendEmail failed:", e?.message || e));
+
+    // Optional: log to history in DB
+    await Order.updateOne(
+      { _id: orderId },
+      { $push: { actionsHistory: {
+        action: "request-proof-again",
+        adminId: (req.user?.id) || (req.admin?.id) || req.userId || "system",
+        adminName: (req.user?.name) || (req.admin?.name) || "Admin",
+        at: new Date()
+      }}}
+    );
+
+    return res.json({ success: true, message: "Request sent to customer", uploadLink });
+  } catch (err) {
+    console.error("requestProofAgain error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+
 // Get all orders (for admin)
 export const getAllOrders = async (req, res) => {
   try {
