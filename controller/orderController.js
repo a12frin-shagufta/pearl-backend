@@ -134,36 +134,55 @@ export const uploadProof = async (req, res) => {
 // Admin: confirm/reject/mark-half payment
 // controllers/orderController.js (replace adminUpdatePayment)
 // controllers/orderController.js
+// controllers/orderController.js
+
+
 export const adminUpdatePayment = async (req, res) => {
   try {
-    const { orderId, action, reason } = req.body;
+    const orderId = String(req.body.orderId || "").trim();
+    const action  = String(req.body.action  || "").trim();
+    const reason  = typeof req.body.reason === "string" ? req.body.reason.trim() : "";
+
+    // Basic validation
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ success: false, message: "Invalid orderId" });
+    }
+    if (!["confirm", "reject", "mark-half"].includes(action)) {
+      return res.status(400).json({ success: false, message: "Invalid action" });
+    }
+
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-    const adminId = (req.user?.id) || (req.admin?.id) || req.userId || "system";
+    // who did it (if your auth middleware sets user/admin)
+    const adminId   = (req.user?.id) || (req.admin?.id) || req.userId || "system";
     const adminName = (req.user?.name) || (req.admin?.name) || "Admin";
 
-    let emailSubject = "", emailHtml = "";
+    // Apply action
+    let emailSubject = "";
+    let emailHtml = "";
 
     if (action === "confirm") {
       order.paymentStatus = "Paid";
-      order.advancePaid = order.advanceRequired || order.total || 0;
+      order.advancePaid   = order.advanceRequired || order.total || 0;
+
       emailSubject = "Order Accepted — Payment confirmed";
       emailHtml = `
         <h3>Order Accepted</h3>
         <p>Dear ${order.name || "Customer"},</p>
-        <p>Your payment for <strong>${order._id}</strong> was verified.</p>
-        <p><strong>Amount received:</strong> ${order.advancePaid || "—"}</p>
+        <p>Your payment for Order <strong>${order._id}</strong> has been verified.</p>
+        <p><strong>Amount received:</strong> ${order.advancePaid ?? "—"}</p>
       `;
     } else if (action === "mark-half") {
       order.paymentStatus = "Half Paid";
-      order.advancePaid = order.advanceRequired || Math.round((order.total || 0) / 2);
-      const remaining = (order.total || 0) - (order.advancePaid || 0);
+      order.advancePaid   = order.advanceRequired || Math.round((order.total || 0) / 2);
+      const remaining     = (order.total || 0) - (order.advancePaid || 0);
+
       emailSubject = "Deposit Received — Order Confirmed";
       emailHtml = `
         <h3>Deposit Received</h3>
         <p>Dear ${order.name || "Customer"},</p>
-        <p>We received your deposit for <strong>${order._id}</strong>.</p>
+        <p>We received your deposit for Order <strong>${order._id}</strong>.</p>
         <p><strong>Deposit:</strong> ${order.advancePaid} — <strong>Remaining COD:</strong> ${remaining}</p>
       `;
     } else if (action === "reject") {
@@ -171,46 +190,63 @@ export const adminUpdatePayment = async (req, res) => {
       if (reason) {
         order.note = (order.note ? order.note + "\n\n" : "") + `Admin rejection reason: ${reason}`;
       }
+
       emailSubject = "Payment Rejected — Please Try Again";
       emailHtml = `
         <h3>Payment Rejected</h3>
         <p>Dear ${order.name || "Customer"},</p>
-        <p>We found an issue while verifying your payment for <strong>${order._id}</strong>.</p>
+        <p>We found an issue while verifying your payment for Order <strong>${order._id}</strong>.</p>
         ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
       `;
-    } else {
-      return res.status(400).json({ success: false, message: "Invalid action" });
     }
 
-    // record history
-    order.actionsHistory.push({ action, adminId, adminName, reason: reason || "", at: new Date() });
+    // Record history
+    order.actionsHistory.push({
+      action,
+      adminId,
+      adminName,
+      reason: reason || "",
+      at: new Date(),
+    });
 
     await order.save();
 
-    // 🔥 fire-and-forget emails so request doesn't block
-    sendEmail({ to: order.email, subject: emailSubject, html: emailHtml })
-      .catch(err => console.error("adminUpdatePayment: customer email failed:", err?.message || err));
+    // Fire-and-forget emails (don’t block the response)
+    (async () => {
+      try {
+        await sendEmail({ to: order.email, subject: emailSubject, html: emailHtml });
+      } catch (e) {
+        console.error("adminUpdatePayment: customer email failed:", e?.message || e);
+      }
 
-    if (process.env.ADMIN_EMAIL) {
-      sendEmail({
-        to: process.env.ADMIN_EMAIL,
-        subject: `Admin action ${action} — Order ${order._id}`,
-        html: `
-          <p>${adminName} performed <strong>${action}</strong> on Order <strong>${order._id}</strong>.</p>
-          ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
-        `
-      }).catch(err => console.error("adminUpdatePayment: admin email failed:", err?.message || err));
-    }
+      if (process.env.ADMIN_EMAIL) {
+        try {
+          await sendEmail({
+            to: process.env.ADMIN_EMAIL,
+            subject: `Admin action ${action} — Order ${order._id}`,
+            html: `
+              <p>${adminName} performed <strong>${action}</strong> on Order <strong>${order._id}</strong>.</p>
+              ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
+            `,
+          });
+        } catch (e) {
+          console.error("adminUpdatePayment: admin email failed:", e?.message || e);
+        }
+      }
+    })();
 
-    // ✅ respond immediately
-    return res.json({ success: true, message: "Order updated", paymentStatus: order.paymentStatus, order });
-
+    // Respond immediately
+    return res.json({
+      success: true,
+      message: "Order updated",
+      paymentStatus: order.paymentStatus,
+      order,
+    });
   } catch (err) {
     console.error("adminUpdatePayment error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 
 
 // Get all orders (for admin)
