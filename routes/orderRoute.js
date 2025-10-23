@@ -26,7 +26,12 @@ const upload = multer({
 
 orderRouter.post("/place-manual", createManualOrder);
 orderRouter.post("/upload-proof", upload.single("proof"), uploadProof);
-orderRouter.post("/admin/confirm-payment", adminUpdatePayment);
+// routes/orderRoute.js
+orderRouter.post("/admin/confirm-payment", async (req, res, next) => {
+  console.log("[admin/confirm-payment] body:", req.body);
+  next();
+}, adminUpdatePayment);
+
 orderRouter.get("/all", getAllOrders);
 
 export default orderRouter;
