@@ -13,7 +13,7 @@ import testimonialRouter from './routes/testimonialRoute.js';
 import orderRouter from './routes/orderRoute.js';
 import path from 'path';
 import { fileURLToPath } from "url";
-
+import connectCloudinary from './config/cloudinary.js'
 const app = express();
 const port = process.env.PORT || 5002;
 
@@ -70,7 +70,7 @@ app.use(express.json());
 
 // Connect services
 connectDb();
-connectCloudinary();
+
 
 // Routes
 app.use('/api/user', adminRouter);
