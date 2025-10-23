@@ -20,14 +20,13 @@ export const createManualOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: "Cart empty" });
     }
 
-    // 👇 ensure variantColor is kept (and keep old 'variant' if present)
     const safeItems = items.map(it => ({
       productId: it.productId,
       key: it.key,
       name: it.name,
       image: it.image,
-      variant: it.variant || "",                             // old field
-      variantColor: (it.variantColor || "").trim(),          // NEW field
+      variant: it.variant || "",
+      variantColor: (it.variantColor || "").trim(),
       quantity: Number(it.quantity || 0),
       unitPrice: Number(it.unitPrice || 0),
       total: Number(it.total || 0),
@@ -35,7 +34,7 @@ export const createManualOrder = async (req, res) => {
 
     const order = new Order({
       name, phone, email, address, city, state, note,
-      items: safeItems,                    // 👈 use sanitized items
+      items: safeItems,
       subtotal, shipping, total,
       transactionRef, senderLast4,
       advanceRequired,
@@ -46,27 +45,25 @@ export const createManualOrder = async (req, res) => {
 
     await order.save();
 
-    // ✉️ Send confirmation email
-    try {
-      await sendEmail({
-        to: email,
-        subject: "Order Confirmation",
-        html: `
-          <h2>Thank you for your order!</h2>
-          <p>Order ID: <strong>${order._id}</strong></p>
-          <p>Total: ${order.total}</p>
-          <p>We will contact you soon to confirm your payment.</p>
-        `
-      });
-    } catch (mailErr) {
-      console.error("Failed to send email:", mailErr);
-    }
+    // ✅ Send email NON-BLOCKING (doesn't slow API)
+    sendEmail({
+      to: email,
+      subject: "Order Confirmation",
+      html: `
+        <h2>Thank you for your order!</h2>
+        <p>Order ID: <strong>${order._id}</strong></p>
+        <p>Total: ${order.total}</p>
+        <p>We will contact you soon to confirm your payment.</p>
+      `
+    }).catch(err => {
+      console.error("sendEmail error:", err.message);
+    });
 
-    // ✅ Respond AFTER sending email
-    return res.status(201).json({ 
-      success: true, 
-      message: "Order created", 
-      orderId: order._id 
+    // ✅ Send response immediately so frontend doesn’t timeout!
+    return res.status(201).json({
+      success: true,
+      message: "Order created",
+      orderId: order._id
     });
 
   } catch (err) {
