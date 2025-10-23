@@ -11,5 +11,8 @@ cloudinary.config({
 // quick sanity log at boot (one-time)
 console.log("[cloudinary] init ok:",
   { name: process.env.CLOUDINARY_NAME, hasUploader: !!cloudinary.uploader });
+  const c = mongoose.connection;
+console.log("[DB INFO]", { host: c.host, name: c.name, readyState: c.readyState });
+
 
 export default cloudinary;
