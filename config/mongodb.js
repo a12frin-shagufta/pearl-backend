@@ -1,13 +1,16 @@
+// config/mongodb.js
 import mongoose from "mongoose";
 
-const connectDb = async() => {
+const connectDb = async () => {
+  mongoose.connection.on("connected", () => {
+    console.log("DB connected");
+  });
 
-    mongoose.connection.on('connected',() => {
-        console.log("DB connected")
-    })
-   
-    await mongoose.connect(`${process.env.MONGODB_URI}/pearl`)
-}
+  // ✅ JUST use MONGODB_URI — don't append /pearl here!
+  await mongoose.connect(process.env.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  });
+};
 
-
-export default connectDb
+export default connectDb;
