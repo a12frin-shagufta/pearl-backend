@@ -12,9 +12,11 @@ import testimonialRouter from './routes/testimonialRoute.js';
 import orderRouter from './routes/orderRoute.js';
 import path from 'path';
 import { fileURLToPath } from "url";
-import connectCloudinary from './config/cloudinary.js'
+
 const app = express();
 const port = process.env.PORT || 5002;
+import mongoose from 'mongoose';
+import cloudinary from './config/cloudinary.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -68,26 +70,30 @@ app.use(
 app.use(express.json());
 
 // Connect services
-connectDb();
+connectDb()
+  .then(() => {
+    const c = mongoose.connection;
+    console.log("[DB INFO]", { host: c.host, name: c.name, readyState: c.readyState });
+    console.log("[cloudinary] init ok:", {
+      name: process.env.CLOUDINARY_NAME,
+      hasUploader: !!cloudinary.uploader,
+    });
 
+    // Routes
+    app.use("/api/user", adminRouter);
+    app.use("/api/offer", offerRouter);
+    app.use("/api/product", productRouter);
+    app.use("/api/contact", contactRouter);
+    app.use("/api/category", categoryRouter);
+    app.use("/api/testimonials", testimonialRouter);
+    app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+    app.use("/api/order", orderRouter);
 
-// Routes
-app.use('/api/user', adminRouter);
-app.use('/api/offer', offerRouter);
-app.use('/api/product', productRouter);
-app.use('/api/contact', contactRouter);
-app.use('/api/category', categoryRouter);
-app.use('/api/testimonials', testimonialRouter);
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+    app.get("/", (_, res) => res.send("API Working"));
 
-app.use('/api/order', orderRouter);
-
-// Test route
-app.get('/', (req, res) => {
-  res.send('API Working');
-});
-
-// Start server
-app.listen(port, () => {
-  console.log(`Server started on port: ${port}`);
-});
+    app.listen(port, () => console.log(`Server started on port: ${port}`));
+  })
+  .catch((err) => {
+    console.error("DB connect failed:", err);
+    process.exit(1);
+  });
