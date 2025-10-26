@@ -16,6 +16,7 @@ export const createManualOrder = async (req, res) => {
       name, phone, email, address, city, state, note,
       paymentMethod, items, subtotal, shipping, total,
       advanceRequired, transactionRef, senderLast4, paymentInstructions,
+      
     } = req.body;
 
     if (!items || items.length === 0) {
@@ -32,6 +33,8 @@ export const createManualOrder = async (req, res) => {
       quantity: Number(it.quantity || 0),
       unitPrice: Number(it.unitPrice || 0),
       total: Number(it.total || 0),
+       engravingFirstName: (it.engravingFirstName || "").trim(),
+       engravingLastName:  (it.engravingLastName  || "").trim(),
     }));
 
     const order = new Order({

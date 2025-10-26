@@ -25,6 +25,8 @@ const itemSchema = new mongoose.Schema({
   quantity: Number,
   unitPrice: Number,
   total: Number,
+  engravingFirstName: { type: String, default: "" },
+  engravingLastName:  { type: String, default: "" },
 });
 
 const orderSchema = new mongoose.Schema(
