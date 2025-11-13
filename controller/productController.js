@@ -11,31 +11,44 @@ import mongoose from "mongoose";
 // controllers/productController.js
 
 // controllers/productController.js
+// controllers/productController.js
 const uploadToCloudinary = async (filePath, originalName, resourceType = "auto", retries = 3, delay = 1000) => {
-  const ext = originalName?.split(".").pop()?.toLowerCase() || "";
-  const supportedImageExts = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp", "tiff"];
+  const ext = (originalName?.split(".").pop() || "").toLowerCase();
+  const supportedImageExts = ["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "bmp", "tiff"];
 
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      let options;
+      let options = {};
 
       if (resourceType === "video") {
         options = { resource_type: "video" };
       } else if (supportedImageExts.includes(ext)) {
-        // ✅ All image formats handled here
-        options = {
-          resource_type: "image",
-          format: ext, // use same format as original
-          transformation: [
-            { width: 1200, height: 1200, crop: "limit" },
-            { quality: "auto", fetch_format: "auto" }, // Cloudinary will auto-optimize output
-          ],
-        };
+        // For HEIC/HEIF files we convert to JPG to ensure broad compatibility.
+        if (ext === "heic" || ext === "heif") {
+          options = {
+            resource_type: "image",
+            format: "jpg", // convert HEIC/HEIF to jpg on upload
+            transformation: [
+              { width: 1200, height: 1200, crop: "limit" },
+              { quality: "auto", fetch_format: "auto" },
+            ],
+          };
+        } else {
+          // For other image types (including webp), let Cloudinary decide output format
+          options = {
+            resource_type: "image",
+            // do NOT force `format: ext` here — let Cloudinary auto-optimize.
+            transformation: [
+              { width: 1200, height: 1200, crop: "limit" },
+              { quality: "auto", fetch_format: "auto" },
+            ],
+          };
+        }
       } else {
-        // fallback for unknown types (Cloudinary detects automatically)
+        // fallback for unknown types
         options = {
           resource_type: "auto",
-          transformation: [{ quality: "auto" }],
+          transformation: [{ quality: "auto", fetch_format: "auto" }],
         };
       }
 
@@ -44,6 +57,27 @@ const uploadToCloudinary = async (filePath, originalName, resourceType = "auto",
       return res.secure_url;
     } catch (err) {
       console.error(`❌ Cloudinary upload failed for ${originalName} (attempt ${attempt + 1}): ${err.message}`);
+
+      // If we attempted with format forcing and Cloudinary complains about format,
+      // try again without `format` as a fallback (only once).
+      if (
+        attempt === 0 &&
+        (ext === "heic" || ext === "heif") &&
+        err.message &&
+        err.message.toLowerCase().includes("unsupported") // heuristic
+      ) {
+        try {
+          console.warn("⚠️ fallback: retrying HEIC upload without explicit format");
+          const fallbackRes = await cloudinary.uploader.upload(filePath, {
+            resource_type: "image",
+            transformation: [{ width: 1200, height: 1200, crop: "limit" }, { quality: "auto", fetch_format: "auto" }],
+          });
+          return fallbackRes.secure_url;
+        } catch (fallbackErr) {
+          console.error("Fallback upload also failed:", fallbackErr.message);
+        }
+      }
+
       if (attempt === retries - 1) throw err;
       await new Promise((r) => setTimeout(r, delay));
     }
