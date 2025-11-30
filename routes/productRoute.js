@@ -36,26 +36,13 @@ const storage = multer.diskStorage({
 // routes/productRouter.js (or wherever mediaFileFilter is defined)
 const mediaFileFilter = (req, file, cb) => {
   const mime = (file.mimetype || "").toLowerCase();
-  const ext = path.extname(file.originalname || "").toLowerCase();
+  console.log(`📸 Received file: ${file.originalname}, mime: ${mime}`);
 
-  const allowedExts = [
-    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".heic", ".heif",
-    ".mp4", ".mov", ".avi", ".mkv"
-  ];
+  if (mime.startsWith("image/") || mime.startsWith("video/")) {
+    return cb(null, true);
+  }
 
-  // Accept known image/video mimetypes (include heic/heif variants)
-  const allowedMimes = [
-    "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif",
-    "image/bmp", "image/tiff", "image/heic", "image/heif",
-    "video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/mkv"
-  ];
-
-  const isAllowed = allowedExts.includes(ext) || allowedMimes.includes(mime) || mime.startsWith("image/") || mime.startsWith("video/");
-
-  console.log(`📸 Received file: ${file.originalname}, mime: ${mime}, ext: ${ext}`);
-
-  if (isAllowed) cb(null, true);
-  else cb(new Error(`❌ Invalid file type: ${file.originalname} (${mime})`), false);
+  return cb(new Error(`❌ Invalid file type: ${file.originalname} (${mime})`), false);
 };
 
 
