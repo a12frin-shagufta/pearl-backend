@@ -7,16 +7,23 @@ import mongoose from "mongoose";
  * Upload helper to Cloudinary
  * - resource_type: "auto" => works for images AND videos
  */
-const uploadToCloudinary = async (filePath) => {
+// controllers/productController.js
+const uploadToCloudinary = async (filePath, type = "image") => {
   try {
-    const res = await cloudinary.uploader.upload(filePath, {
-      resource_type: "auto", // let Cloudinary detect
-      // folder: "products", // optional: uncomment if you want a folder
-    });
+    const options =
+      type === "video"
+        ? { resource_type: "video" } // 🎥 real video
+        : {
+            resource_type: "image",
+            format: "jpg",            // 🖼️ convert HEIC/WEBP/PNG/etc → JPG
+          };
+
+    const res = await cloudinary.uploader.upload(filePath, options);
 
     console.log("✅ Uploaded to Cloudinary:", {
       public_id: res.public_id,
       resource_type: res.resource_type,
+      format: res.format,
       url: res.secure_url,
     });
 
@@ -26,6 +33,7 @@ const uploadToCloudinary = async (filePath) => {
     throw err;
   }
 };
+
 
 /**
  * Helper: safe file delete
@@ -266,25 +274,26 @@ const updateProduct = async (req, res) => {
       }
 
       // Upload new images/videos if provided
-      const uploadedImageUrls = variantImageEntries.length
-        ? await Promise.all(
-            variantImageEntries.map((entry) =>
-              uploadToCloudinary(entry.file.path)
-            )
-          )
-        : [];
+     const uploadedImageUrls = variantImageEntries.length
+  ? await Promise.all(
+      variantImageEntries.map((entry) =>
+        uploadToCloudinary(entry.file.path, "image")
+      )
+    )
+  : [];
 
-      const uploadedVideoUrlsForIndex = {};
-      if (variantVideoEntries.length > 0) {
-        const uploadedVideos = await Promise.all(
-          variantVideoEntries.map((entry) =>
-            uploadToCloudinary(entry.file.path)
-          )
-        );
-        variantVideoEntries.forEach((entry, idx) => {
-          uploadedVideoUrlsForIndex[entry.index] = [uploadedVideos[idx]];
-        });
-      }
+const uploadedVideoUrlsForIndex = {};
+if (variantVideoEntries.length > 0) {
+  const uploadedVideos = await Promise.all(
+    variantVideoEntries.map((entry) =>
+      uploadToCloudinary(entry.file.path, "video")
+    )
+  );
+  variantVideoEntries.forEach((entry, idx) => {
+    uploadedVideoUrlsForIndex[entry.index] = [uploadedVideos[idx]];
+  });
+}
+
 
       // cleanup uploaded temp files
       [...variantImageEntries, ...variantVideoEntries].forEach(({ file }) =>
