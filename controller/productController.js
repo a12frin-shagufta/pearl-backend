@@ -157,30 +157,33 @@ const addProduct = async (req, res) => {
     }
 
     // Upload all files to Cloudinary
-    const uploadedByIndex = {};
-    try {
-      for (let i = 0; i < colorArray.length; i++) {
-        uploadedByIndex[i] = { images: [], videos: [] };
+    // Upload all files to Cloudinary
+const uploadedByIndex = {};
+try {
+  for (let i = 0; i < colorArray.length; i++) {
+    uploadedByIndex[i] = { images: [], videos: [] };
 
-        const { imageFile, videoFile } = perIndexFiles[i];
+    const { imageFile, videoFile } = perIndexFiles[i];
 
-        if (imageFile) {
-          const url = await uploadToCloudinary(imageFile.path);
-          uploadedByIndex[i].images.push(url);
-        }
-        if (videoFile) {
-          const url = await uploadToCloudinary(videoFile.path);
-          uploadedByIndex[i].videos.push(url);
-        }
-      }
-    } finally {
-      // cleanup temp files
-      for (let i = 0; i < colorArray.length; i++) {
-        const { imageFile, videoFile } = perIndexFiles[i];
-        if (imageFile) safeUnlink(imageFile.path);
-        if (videoFile) safeUnlink(videoFile.path);
-      }
+    if (imageFile) {
+      // 🖼️ tell helper this is an image
+      const url = await uploadToCloudinary(imageFile.path, "image");
+      uploadedByIndex[i].images.push(url);
     }
+    if (videoFile) {
+      // 🎥 tell helper this is a video
+      const url = await uploadToCloudinary(videoFile.path, "video");
+      uploadedByIndex[i].videos.push(url);
+    }
+  }
+} finally {
+  for (let i = 0; i < colorArray.length; i++) {
+    const { imageFile, videoFile } = perIndexFiles[i];
+    if (imageFile) safeUnlink(imageFile.path);
+    if (videoFile) safeUnlink(videoFile.path);
+  }
+}
+
 
     const globalStockNumber = Number(stock) || 0;
 
