@@ -12,27 +12,26 @@ const uploadToCloudinary = async (filePath, type = "image") => {
   try {
     const options =
       type === "video"
-        ? { resource_type: "video" } // 🎥 real video
+        ? { resource_type: "video" }
         : {
             resource_type: "image",
-            format: "jpg",            // 🖼️ convert HEIC/WEBP/PNG/etc → JPG
+            format: "jpg", // convert any image to JPG
           };
 
     const res = await cloudinary.uploader.upload(filePath, options);
-
     console.log("✅ Uploaded to Cloudinary:", {
       public_id: res.public_id,
       resource_type: res.resource_type,
       format: res.format,
       url: res.secure_url,
     });
-
     return res.secure_url;
   } catch (err) {
     console.error("❌ Cloudinary upload error:", err.message);
     throw err;
   }
 };
+
 
 
 /**
