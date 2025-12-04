@@ -74,10 +74,11 @@ connectDb()
   .then(() => {
     const c = mongoose.connection;
     console.log("[DB INFO]", { host: c.host, name: c.name, readyState: c.readyState });
-    console.log("[cloudinary] init ok:", {
-      name: process.env.CLOUDINARY_NAME,
-      hasUploader: !!cloudinary.uploader,
-    });
+    console.log("[cloudinary] init ok (server.js):", {
+  name: process.env.CLOUDINARY_CLOUD_NAME,
+  hasUploader: !!cloudinary.uploader,
+});
+
 
     // Routes
     app.use("/api/user", adminRouter);
