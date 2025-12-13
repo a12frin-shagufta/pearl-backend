@@ -3,6 +3,8 @@ import cloudinary from "../config/cloudinary.js";
 import productModel from "../models/productModel.js";
 import fs from "fs";
 import mongoose from "mongoose";
+import { uploadToB2 } from "../utils/uploadVideoB2.js"
+import { deleteFromB2 } from "../utils/deleteVideoB2.js";
 
 /**
  * Upload helper to Cloudinary
@@ -141,24 +143,36 @@ const addProduct = async (req, res) => {
     const variantStocks = readVariantStocks(req, colorArray.length);
 
     // Collect files per index
-    const perIndexFiles = {};
-    for (let i = 0; i < colorArray.length; i++) {
-      perIndexFiles[i] = {
-        imageFile: req.files?.[`variantImage${i}`]?.[0] || null,
-        videoFile: req.files?.[`variantVideo${i}`]?.[0] || null,
-      };
+// ✅ SAFE VERSION
+// console.log('📊 FILE SIZE DEBUG:');
+const perIndexFiles = {};
 
-      // Must have at least one media
-      if (!perIndexFiles[i].imageFile && !perIndexFiles[i].videoFile) {
-        return res.status(400).json({
-          success: false,
-          message: `Provide an image or a video for color "${colorArray[i]}" (fields variantImage${i} or variantVideo${i}).`,
-        });
-      }
-    }
+for (let i = 0; i < colorArray.length; i++) {
+  // Safe individual access - no array indexing crash
+  const imageFile = req.files?.[`variantImage${i}`]?.[0] || null;
+  const videoFile = req.files?.[`variantVideo${i}`]?.[0] || null;
+  
+  // Log sizes immediately
+  if (videoFile) {
+    const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
+    console.log(`  🎥 variantVideo${i}: "${videoFile.originalname}" → ${sizeMB}MB`);
+  }
+  if (imageFile) {
+    console.log(`  🖼️ variantImage${i}: "${imageFile.originalname}" → ${(imageFile.size / 1024 / 1024).toFixed(1)}MB`);
+  }
+  
+  perIndexFiles[i] = { imageFile, videoFile };
+  
+  // Safe media validation
+  if (!imageFile && !videoFile) {
+    return res.status(400).json({
+      success: false,
+      message: `Missing image/video for color "${colorArray[i]}" (variantImage${i} or variantVideo${i})`,
+    });
+  }
+}
 
-    // Upload all files to Cloudinary
-    // Upload all files to Cloudinary
+
 const uploadedByIndex = {};
 try {
   for (let i = 0; i < colorArray.length; i++) {
@@ -171,11 +185,22 @@ try {
       const url = await uploadToCloudinary(imageFile.path, "image");
       uploadedByIndex[i].images.push(url);
     }
-    if (videoFile) {
-      // 🎥 tell helper this is a video
-      const url = await uploadToCloudinary(videoFile.path, "video");
-      uploadedByIndex[i].videos.push(url);
-    }
+if (videoFile) {
+  const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
+  // console.log(`📤 Uploading video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
+  
+  const b2Path = await uploadToB2(
+    videoFile.path,
+    videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"), // Keep compressed name
+    videoFile.mimetype,
+    fs
+  );
+  
+  // console.log(`✅ B2 uploaded: ${b2Path} (${sizeMB}MB)`);
+  uploadedByIndex[i].videos.push(b2Path);
+}
+
+
   }
 } finally {
   for (let i = 0; i < colorArray.length; i++) {
@@ -240,16 +265,12 @@ const updateProduct = async (req, res) => {
   try {
     const { id } = req.body;
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Valid product ID is required." });
+      return res.status(400).json({ success: false, message: "Valid product ID is required." });
     }
 
     const existing = await productModel.findById(id);
     if (!existing)
-      return res
-        .status(404)
-        .json({ success: false, message: "Product not found." });
+      return res.status(404).json({ success: false, message: "Product not found." });
 
     const parsedDetails = parseMaybeJsonArray(req.body.details);
     const parsedFaqs = parseMaybeJsonArray(req.body.faqs);
@@ -258,8 +279,23 @@ const updateProduct = async (req, res) => {
       .filter(Boolean);
 
     let variants;
+
     if (parsedColors.length > 0) {
       const variantStocks = readVariantStocks(req, parsedColors.length);
+
+      // 🐛 DEBUG: Log all files first
+      console.log('📊 UPDATE FILE DEBUG:');
+      for (let i = 0; i < parsedColors.length; i++) {
+        const imgFile = req.files?.[`variantImage${i}`]?.[0];
+        const vidFile = req.files?.[`variantVideo${i}`]?.[0];
+        if (vidFile) {
+          const sizeMB = (vidFile.size / 1024 / 1024).toFixed(1);
+          console.log(`  🎥 variantVideo${i}: "${vidFile.originalname}" → ${sizeMB}MB`);
+        }
+        if (imgFile) {
+          console.log(`  🖼️ variantImage${i}: "${imgFile.originalname}" → ${(imgFile.size / 1024 / 1024).toFixed(1)}MB`);
+        }
+      }
 
       const variantImageEntries = [];
       const variantVideoEntries = [];
@@ -268,37 +304,51 @@ const updateProduct = async (req, res) => {
         const imgKey = `variantImage${i}`;
         const vidKey = `variantVideo${i}`;
 
-        if (req.files && req.files[imgKey] && req.files[imgKey][0]) {
+        if (req.files?.[imgKey]?.[0]) {
           variantImageEntries.push({ file: req.files[imgKey][0], index: i });
         }
-        if (req.files && req.files[vidKey] && req.files[vidKey][0]) {
+        if (req.files?.[vidKey]?.[0]) {
           variantVideoEntries.push({ file: req.files[vidKey][0], index: i });
         }
       }
 
-      // Upload new images/videos if provided
-     const uploadedImageUrls = variantImageEntries.length
-  ? await Promise.all(
-      variantImageEntries.map((entry) =>
-        uploadToCloudinary(entry.file.path, "image")
-      )
-    )
-  : [];
+      // --------- IMAGE UPLOAD (Cloudinary) ----------
+      const uploadedImageUrls = variantImageEntries.length
+        ? await Promise.all(
+            variantImageEntries.map((entry) =>
+              uploadToCloudinary(entry.file.path, "image")
+            )
+          )
+        : [];
 
-const uploadedVideoUrlsForIndex = {};
-if (variantVideoEntries.length > 0) {
-  const uploadedVideos = await Promise.all(
-    variantVideoEntries.map((entry) =>
-      uploadToCloudinary(entry.file.path, "video")
-    )
-  );
-  variantVideoEntries.forEach((entry, idx) => {
-    uploadedVideoUrlsForIndex[entry.index] = [uploadedVideos[idx]];
-  });
-}
+      // --------- VIDEO UPLOAD (Backblaze B2) ----------
+      const uploadedVideoUrlsForIndex = {};
 
+      if (variantVideoEntries.length > 0) {
+        console.log(`📤 Uploading ${variantVideoEntries.length} video(s)...`);
+        const uploadedVideos = await Promise.all(
+          variantVideoEntries.map(async (entry) => {
+            const sizeMB = (entry.file.size / 1024 / 1024).toFixed(1);
+            console.log(`📤 Video ${entry.index}: "${entry.file.originalname}" (${sizeMB}MB)`);
+            
+            const savedPath = await uploadToB2(
+              entry.file.path,
+              entry.file.originalname, // Keep WebM name
+              entry.file.mimetype,
+              fs
+            );
+            
+            console.log(`✅ B2: ${savedPath} (${sizeMB}MB)`);
+            return { index: entry.index, path: savedPath };
+          })
+        );
 
-      // cleanup uploaded temp files
+        uploadedVideos.forEach((item) => {
+          uploadedVideoUrlsForIndex[item.index] = [item.path];
+        });
+      }
+
+      // Cleanup temp files
       [...variantImageEntries, ...variantVideoEntries].forEach(({ file }) =>
         safeUnlink(file.path)
       );
@@ -308,33 +358,23 @@ if (variantVideoEntries.length > 0) {
         : existing.stock || 0;
 
       variants = parsedColors.map((color, i) => {
-        const colorNorm = String(color).trim();
-        const imgEntryIndex = variantImageEntries.findIndex(
-          (v) => v.index === i
-        );
-        const imageUrl =
-          imgEntryIndex !== -1 ? uploadedImageUrls[imgEntryIndex] : null;
-        const videosFromUpload = uploadedVideoUrlsForIndex[i] || [];
-
-        const existingMatch = (existing.variants || []).find(
-          (v) => String(v.color || "").toLowerCase() === colorNorm.toLowerCase()
+        const existingMatch = existing.variants?.find(
+          (v) => v.color.toLowerCase() === color.toLowerCase()
         );
 
-        const images = imageUrl ? [imageUrl] : existingMatch?.images || [];
-        const videos = videosFromUpload.length
-          ? videosFromUpload
-          : existingMatch?.videos || [];
+        const imgEntryIndex = variantImageEntries.findIndex((v) => v.index === i);
+        const newImage = imgEntryIndex !== -1 ? uploadedImageUrls[imgEntryIndex] : null;
 
-        const perVariantStock =
-          typeof variantStocks[i] === "number"
-            ? variantStocks[i]
-            : existingMatch?.stock ?? fallbackStock;
+        const newVideos = uploadedVideoUrlsForIndex[i] || [];
 
         return {
-          color: colorNorm,
-          images,
-          videos,
-          stock: perVariantStock,
+          color,
+          images: newImage ? [newImage] : existingMatch?.images || [],
+          videos: newVideos.length ? newVideos : existingMatch?.videos || [],
+          stock:
+            typeof variantStocks[i] === "number"
+              ? variantStocks[i]
+              : existingMatch?.stock ?? fallbackStock,
         };
       });
     }
@@ -343,10 +383,10 @@ if (variantVideoEntries.length > 0) {
       name: req.body.name ?? existing.name,
       price: req.body.price ? Number(req.body.price) : existing.price,
       category: req.body.category
-        ? String(req.body.category).trim().toLowerCase()
+        ? req.body.category.trim().toLowerCase()
         : existing.category,
       subcategory: req.body.subcategory
-        ? String(req.body.subcategory).trim().toLowerCase()
+        ? req.body.subcategory.trim().toLowerCase()
         : existing.subcategory,
       stock: req.body.stock ? Number(req.body.stock) : existing.stock,
       bestseller:
@@ -367,19 +407,15 @@ if (variantVideoEntries.length > 0) {
       runValidators: true,
     });
 
-    return res.status(200).json({
-      success: true,
-      message: "Product updated successfully",
-      product: updated,
-    });
+    console.log(`✅ Updated product ${id}: ${parsedColors.length} variants`);
+    res.json({ success: true, message: "Product updated successfully", product: updated });
   } catch (err) {
     console.error("updateProduct error:", err);
-    return res.status(500).json({
-      success: false,
-      message: err.message || "Failed to update product",
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
+
+
 const listProduct = async (req, res) => {
   try {
     // Optionally you may want to populate or project specific fields — here we return everything
@@ -391,20 +427,62 @@ const listProduct = async (req, res) => {
   }
 };
 
+// const removeProduct = async (req, res) => {
+//   try {
+//     const { id } = req.body;
+//     if (!id) return res.status(400).json({ success: false, message: "Product ID is required." });
+
+//     const product = await productModel.findById(id);
+//     if (!product) return res.status(404).json({ success: false, message: "Product not found." });
+
+//     await productModel.findByIdAndDelete(id);
+//     // Consider removing associated Cloudinary assets if you want to free storage (not implemented here).
+//     return res.status(200).json({ success: true, message: "Product removed successfully." });
+//   } catch (error) {
+//     console.error("removeProduct error:", error);
+//     return res.status(500).json({ success: false, message: "Failed to delete product." });
+//   }
+// };
 const removeProduct = async (req, res) => {
   try {
     const { id } = req.body;
-    if (!id) return res.status(400).json({ success: false, message: "Product ID is required." });
+    if (!id) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Product ID is required." });
+    }
 
     const product = await productModel.findById(id);
-    if (!product) return res.status(404).json({ success: false, message: "Product not found." });
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found." });
+    }
+
+    const videoKeys = [];
+    for (const v of product.variants || []) {
+      for (const key of v.videos || []) {
+        if (typeof key === "string" && key.trim()) {
+          videoKeys.push(key.trim());
+        }
+      }
+    }
+
+    if (videoKeys.length) {
+      // console.log("🧹 Deleting B2 videos for product:", id, videoKeys);
+      await Promise.all(videoKeys.map((k) => deleteFromB2(k)));
+    }
 
     await productModel.findByIdAndDelete(id);
-    // Consider removing associated Cloudinary assets if you want to free storage (not implemented here).
-    return res.status(200).json({ success: true, message: "Product removed successfully." });
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Product removed successfully." });
   } catch (error) {
     console.error("removeProduct error:", error);
-    return res.status(500).json({ success: false, message: "Failed to delete product." });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to delete product." });
   }
 };
 
