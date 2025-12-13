@@ -12,9 +12,9 @@ import testimonialRouter from './routes/testimonialRoute.js';
 import orderRouter from './routes/orderRoute.js';
 import path from 'path';
 import { fileURLToPath } from "url";
-
+import videoRouter from "./routes/videoRoute.js"
 const app = express();
-const port = process.env.PORT || 5002;
+const port = process.env.PORT || 3000;
 import mongoose from 'mongoose';
 import cloudinary from './config/cloudinary.js';
 
@@ -89,6 +89,7 @@ connectDb()
     app.use("/api/testimonials", testimonialRouter);
     app.use("/uploads", express.static(path.join(__dirname, "uploads")));
     app.use("/api/order", orderRouter);
+    app.use("/api/video", videoRouter)
 
     app.get("/", (_, res) => res.send("API Working"));
 
