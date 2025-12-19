@@ -5,7 +5,13 @@ import mongoose from "mongoose";
 const variantSchema = new mongoose.Schema({
   color: { type: String, required: true },
    images: { type: [String], default: [] },
-  videos: { type: [String], default: [] },
+   videos: [
+          {
+            key: { type: String, required: true },
+            signedUrl: { type: String },
+            expiresAt: { type: Number }
+          }
+        ],
   stock: { type: Number, default: 0 } // <-- new per-variant stock
 });
 
