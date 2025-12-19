@@ -3,7 +3,7 @@ import cloudinary from "../config/cloudinary.js";
 import productModel from "../models/productModel.js";
 import fs from "fs";
 import mongoose from "mongoose";
-import { uploadToB2 } from "../utils/uploadVideoB2.js"
+import { uploadToB2, getSignedVideoUrl } from "../utils/uploadVideoB2.js"
 import { deleteFromB2 } from "../utils/deleteVideoB2.js";
 
 /**
@@ -142,81 +142,97 @@ const addProduct = async (req, res) => {
 
     const variantStocks = readVariantStocks(req, colorArray.length);
 
-    // Collect files per index
-// ✅ SAFE VERSION
-// console.log('📊 FILE SIZE DEBUG:');
-const perIndexFiles = {};
-
-for (let i = 0; i < colorArray.length; i++) {
-  // Safe individual access - no array indexing crash
-  const imageFile = req.files?.[`variantImage${i}`]?.[0] || null;
-  const videoFile = req.files?.[`variantVideo${i}`]?.[0] || null;
-  
-  // Log sizes immediately
-  if (videoFile) {
-    const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
-    console.log(`  🎥 variantVideo${i}: "${videoFile.originalname}" → ${sizeMB}MB`);
-  }
-  if (imageFile) {
-    console.log(`  🖼️ variantImage${i}: "${imageFile.originalname}" → ${(imageFile.size / 1024 / 1024).toFixed(1)}MB`);
-  }
-  
-  perIndexFiles[i] = { imageFile, videoFile };
-  
-  // Safe media validation
-  if (!imageFile && !videoFile) {
-    return res.status(400).json({
-      success: false,
-      message: `Missing image/video for color "${colorArray[i]}" (variantImage${i} or variantVideo${i})`,
-    });
-  }
-}
-
-
-const uploadedByIndex = {};
-try {
-  for (let i = 0; i < colorArray.length; i++) {
-    uploadedByIndex[i] = { images: [], videos: [] };
-
-    const { imageFile, videoFile } = perIndexFiles[i];
-
-    if (imageFile) {
-      // 🖼️ tell helper this is an image
-      const url = await uploadToCloudinary(imageFile.path, "image");
-      uploadedByIndex[i].images.push(url);
+    // ✅ DECLARE uploadedByIndex HERE (at the beginning)
+    const uploadedByIndex = {};
+    
+    // Initialize structure for all indices
+    for (let i = 0; i < colorArray.length; i++) {
+      uploadedByIndex[i] = { images: [], videos: [] };
     }
-if (videoFile) {
-  const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
-  // console.log(`📤 Uploading video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
-  
-  const b2Path = await uploadToB2(
-    videoFile.path,
-    videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"), // Keep compressed name
-    videoFile.mimetype,
-    fs
-  );
-  
-  // console.log(`✅ B2 uploaded: ${b2Path} (${sizeMB}MB)`);
-  uploadedByIndex[i].videos.push(b2Path);
-}
 
+    // Collect files per index
+    const perIndexFiles = {};
 
-  }
-} finally {
-  for (let i = 0; i < colorArray.length; i++) {
-    const { imageFile, videoFile } = perIndexFiles[i];
-    if (imageFile) safeUnlink(imageFile.path);
-    if (videoFile) safeUnlink(videoFile.path);
-  }
-}
+    for (let i = 0; i < colorArray.length; i++) {
+      // Safe individual access - no array indexing crash
+      const imageFile = req.files?.[`variantImage${i}`]?.[0] || null;
+      const videoFile = req.files?.[`variantVideo${i}`]?.[0] || null;
+      
+      // Log sizes immediately
+      if (videoFile) {
+        const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
+        console.log(`  🎥 variantVideo${i}: "${videoFile.originalname}" → ${sizeMB}MB`);
+      }
+      if (imageFile) {
+        console.log(`  🖼️ variantImage${i}: "${imageFile.originalname}" → ${(imageFile.size / 1024 / 1024).toFixed(1)}MB`);
+      }
+      
+      perIndexFiles[i] = { imageFile, videoFile };
+      
+      // Safe media validation
+      if (!imageFile && !videoFile) {
+        return res.status(400).json({
+          success: false,
+          message: `Missing image/video for color "${colorArray[i]}" (variantImage${i} or variantVideo${i})`,
+        });
+      }
+    }
 
+    // ✅ REMOVE THIS DUPLICATE DECLARATION (line 53 in your code)
+    // const uploadedByIndex = {}; // ❌ DELETE THIS LINE
+
+    try {
+      for (let i = 0; i < colorArray.length; i++) {
+        const { imageFile, videoFile } = perIndexFiles[i];
+
+        if (imageFile) {
+          // 🖼️ Upload image to Cloudinary
+          const url = await uploadToCloudinary(imageFile.path, "image");
+          uploadedByIndex[i].images.push(url);
+        }
+        
+        if (videoFile) {
+          const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
+          console.log(`📤 Uploading video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
+          
+          // 🎥 Upload video to B2
+          const b2Key = await uploadToB2(
+            videoFile.path,
+            videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"),
+            videoFile.mimetype,
+            fs
+          );
+          
+          // Generate signed URL for private bucket
+          const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
+          
+          console.log(`✅ B2 uploaded: ${b2Key} → Signed URL generated`);
+          uploadedByIndex[i].videos.push({
+            key: b2Key,
+            signedUrl: signedUrl,
+            expiresAt: Date.now() + (24 * 3600 * 1000)
+          });
+        }
+      }
+    } catch (uploadError) {
+      console.error("Upload error:", uploadError);
+      throw uploadError;
+    } finally {
+      // Cleanup temp files
+      for (let i = 0; i < colorArray.length; i++) {
+        const { imageFile, videoFile } = perIndexFiles[i];
+        if (imageFile) safeUnlink(imageFile.path);
+        if (videoFile) safeUnlink(videoFile.path);
+      }
+    }
 
     const globalStockNumber = Number(stock) || 0;
 
+    // Build variants array
     const variants = colorArray.map((color, i) => ({
       color: String(color).trim(),
       images: uploadedByIndex[i]?.images || [],
-      videos: uploadedByIndex[i]?.videos || [],
+      videos: uploadedByIndex[i]?.videos || [], // Now this contains objects, not just strings
       stock: typeof variantStocks[i] === "number" ? variantStocks[i] : globalStockNumber,
     }));
 
@@ -252,7 +268,6 @@ if (videoFile) {
     });
   }
 };
-
 /**
  * Update product
  * Behavior:
@@ -331,15 +346,21 @@ const updateProduct = async (req, res) => {
             const sizeMB = (entry.file.size / 1024 / 1024).toFixed(1);
             console.log(`📤 Video ${entry.index}: "${entry.file.originalname}" (${sizeMB}MB)`);
             
-            const savedPath = await uploadToB2(
-              entry.file.path,
-              entry.file.originalname, // Keep WebM name
-              entry.file.mimetype,
-              fs
-            );
-            
-            console.log(`✅ B2: ${savedPath} (${sizeMB}MB)`);
-            return { index: entry.index, path: savedPath };
+const b2Key = await uploadToB2(
+  entry.file.path,
+  entry.file.originalname,
+  entry.file.mimetype,
+  fs
+);
+
+// Generate signed URL
+const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
+
+uploadedVideoUrlsForIndex[item.index] = [{
+  key: b2Key,
+  signedUrl: signedUrl,
+  expiresAt: Date.now() + (24 * 3600 * 1000)
+}];
           })
         );
 
@@ -415,12 +436,74 @@ const updateProduct = async (req, res) => {
   }
 };
 
+const generateFreshVideoUrls = async (videosArray) => {
+  if (!videosArray || !Array.isArray(videosArray)) return videosArray;
+  
+  const updatedVideos = await Promise.all(
+    videosArray.map(async (video) => {
+      if (typeof video === 'string') {
+        // Old format string - generate signed URL
+        try {
+          const signedUrl = await getSignedVideoUrl(video, 24 * 3600); // 24 hours
+          return {
+            key: video,
+            signedUrl: signedUrl,
+            expiresAt: Date.now() + (24 * 3600 * 1000)
+          };
+        } catch (err) {
+          console.error(`Failed to generate URL for ${video}:`, err);
+          return video; // Return as-is if generation fails
+        }
+      } else if (video && typeof video === 'object' && video.key) {
+        // Already an object - refresh if expired or expiring soon
+        const isExpired = !video.expiresAt || video.expiresAt < Date.now();
+        const isExpiringSoon = video.expiresAt && 
+                              (video.expiresAt - Date.now()) < (60 * 60 * 1000); // 1 hour
+        
+        if (isExpired || isExpiringSoon) {
+          try {
+            const newSignedUrl = await getSignedVideoUrl(video.key, 24 * 3600);
+            return {
+              ...video,
+              signedUrl: newSignedUrl,
+              expiresAt: Date.now() + (24 * 3600 * 1000)
+            };
+          } catch (err) {
+            console.error(`Failed to refresh URL for ${video.key}:`, err);
+            return video;
+          }
+        }
+        return video;
+      }
+      return video;
+    })
+  );
+  
+  return updatedVideos;
+};
 
+// Update listProduct:
 const listProduct = async (req, res) => {
   try {
-    // Optionally you may want to populate or project specific fields — here we return everything
     const products = await productModel.find({});
-    res.status(200).json({ success: true, products });
+    
+    const processedProducts = await Promise.all(
+      products.map(async (product) => {
+        const productObj = product.toObject();
+        
+        if (productObj.variants) {
+          for (const variant of productObj.variants) {
+            if (variant.videos && variant.videos.length > 0) {
+              variant.videos = await generateFreshVideoUrls(variant.videos);
+            }
+          }
+        }
+        
+        return productObj;
+      })
+    );
+    
+    res.status(200).json({ success: true, products: processedProducts });
   } catch (error) {
     console.error("listProduct error:", error);
     res.status(500).json({ success: false, message: "Failed to fetch products." });
@@ -459,14 +542,18 @@ const removeProduct = async (req, res) => {
         .json({ success: false, message: "Product not found." });
     }
 
-    const videoKeys = [];
-    for (const v of product.variants || []) {
-      for (const key of v.videos || []) {
-        if (typeof key === "string" && key.trim()) {
-          videoKeys.push(key.trim());
-        }
-      }
+// In removeProduct function, update this part:
+const videoKeys = [];
+for (const v of product.variants || []) {
+  for (const key of v.videos || []) {
+    if (typeof key === "string" && key.trim()) {
+      videoKeys.push(key.trim());
+    } else if (key && key.key) {
+      // New format: video is an object with key property
+      videoKeys.push(key.key.trim());
     }
+  }
+}
 
     if (videoKeys.length) {
       // console.log("🧹 Deleting B2 videos for product:", id, videoKeys);
@@ -489,15 +576,102 @@ const removeProduct = async (req, res) => {
 const singleProduct = async (req, res) => {
   try {
     const { productId } = req.body;
-    if (!productId) return res.status(400).json({ success: false, message: "Product ID is required." });
+    if (!productId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Product ID is required." 
+      });
+    }
 
     const product = await productModel.findById(productId);
-    if (!product) return res.status(404).json({ success: false, message: "Product not found." });
+    if (!product) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Product not found." 
+      });
+    }
 
-    res.status(200).json({ success: true, product });
+    // Convert to plain object to modify
+    const productObj = product.toObject();
+    
+    // Generate fresh signed URLs for all videos
+    if (productObj.variants && productObj.variants.length > 0) {
+      for (const variant of productObj.variants) {
+        if (variant.videos && variant.videos.length > 0) {
+          const updatedVideos = [];
+          
+          for (const video of variant.videos) {
+            if (typeof video === 'string') {
+              // Old format: video is just a string
+              if (video.includes('cloudinary.com')) {
+                // Cloudinary URL - keep as-is
+                updatedVideos.push(video);
+              } else if (!video.includes('/')) {
+                // B2 key - generate signed URL
+                try {
+                  const signedUrl = await getSignedVideoUrl(video, 24 * 3600); // 24 hours
+                  updatedVideos.push({
+                    key: video,
+                    signedUrl: signedUrl,
+                    expiresAt: Date.now() + (24 * 3600 * 1000)
+                  });
+                } catch (err) {
+                  console.error(`Failed to generate signed URL for ${video}:`, err);
+                  updatedVideos.push(video);
+                }
+              } else {
+                // Already a URL or unknown format
+                updatedVideos.push(video);
+              }
+            } else if (video && typeof video === 'object') {
+              // New format: video object
+              if (video.key) {
+                // Check if URL is expired or expiring soon (within 1 hour)
+                const isExpired = !video.expiresAt || video.expiresAt < Date.now();
+                const isExpiringSoon = video.expiresAt && 
+                                      (video.expiresAt - Date.now()) < (60 * 60 * 1000);
+                
+                if (isExpired || isExpiringSoon) {
+                  try {
+                    const newSignedUrl = await getSignedVideoUrl(video.key, 24 * 3600);
+                    updatedVideos.push({
+                      ...video,
+                      signedUrl: newSignedUrl,
+                      expiresAt: Date.now() + (24 * 3600 * 1000)
+                    });
+                  } catch (err) {
+                    console.error(`Failed to refresh signed URL for ${video.key}:`, err);
+                    updatedVideos.push(video);
+                  }
+                } else {
+                  // URL is still fresh
+                  updatedVideos.push(video);
+                }
+              } else {
+                // Video object without key
+                updatedVideos.push(video);
+              }
+            } else {
+              // Unknown format
+              updatedVideos.push(video);
+            }
+          }
+          
+          variant.videos = updatedVideos;
+        }
+      }
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      product: productObj 
+    });
   } catch (error) {
     console.error("singleProduct error:", error);
-    res.status(500).json({ success: false, message: "Failed to fetch product." });
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to fetch product." 
+    });
   }
 };
 

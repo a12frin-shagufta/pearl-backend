@@ -6,7 +6,7 @@ const connectDb = async () => {
     console.log("DB connected");
   });
 
-  // ✅ JUST use MONGODB_URI — don't append /pearl here!
+
   await mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
