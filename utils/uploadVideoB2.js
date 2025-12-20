@@ -36,6 +36,7 @@ export const uploadToB2 = async (filePath, fileName, mimeType, fs) => {
 // ✅ FIXED: Generate signed URL (REMOVE HeadObjectCommand)
 export const getSignedVideoUrl = async (key, expiresIn = 7200) => {
   try {
+    
     // Check if it's a Cloudinary URL (old format)
     if (key && key.includes('cloudinary.com')) {
       return key; // Return the Cloudinary URL as-is for old videos
