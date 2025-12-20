@@ -455,6 +455,9 @@ return {
   }
 };
 const generateFreshVideoUrls = async (videosArray) => {
+   console.log('🎯 generateFreshVideoUrls CALLED with input:', videosArray);
+  console.log('🌍 Current NODE_ENV:', process.env.NODE_ENV);
+  console.log('🔑 B2_BUCKET_NAME exists?', !!process.env.B2_BUCKET_NAME);
   if (!videosArray || !Array.isArray(videosArray)) {
     console.warn('⚠️ generateFreshVideoUrls: Invalid input', videosArray);
     return videosArray;
@@ -512,30 +515,33 @@ const generateFreshVideoUrls = async (videosArray) => {
 // Update listProduct:
 const listProduct = async (req, res) => {
   try {
+    console.log('🚀 1. listProduct function STARTED');
     const products = await productModel.find({});
-    console.log(`📦 Fetched ${products.length} raw products from DB`);
+    console.log(`📦 2. Found ${products.length} raw products from DB`);
+    
+    // Find a product you know has a video
+    const testProduct = products.find(p => p._id.toString() === '68d94165cefcdfb41087554e');
+    if (testProduct) {
+      console.log('🔍 3. Test product variant 0 videos:', testProduct.variants?.[0]?.videos);
+    }
     
     const processedProducts = await Promise.all(
-      products.map(async (product) => {
+      products.map(async (product, index) => {
         const productObj = product.toObject();
         
         if (productObj.variants) {
           for (const variant of productObj.variants) {
-            // ⚠️ SAFETY CHECK: Log BEFORE processing
-            const originalVideos = variant.videos;
-            if (originalVideos && originalVideos.length > 0) {
-              console.log(`🎬 Found ${originalVideos.length} video(s) for variant ${variant.color} in product ${productObj.name}`);
-              
+            // ⚠️ ADD THIS LOG HERE - Most important!
+            console.log(`🔄 4. Processing variant ${variant.color} with ${variant.videos?.length || 0} videos`);
+            
+            if (variant.videos && variant.videos.length > 0) {
+              console.log(`🎬 5. Calling generateFreshVideoUrls for ${variant.videos.length} videos`);
               try {
                 variant.videos = await generateFreshVideoUrls(variant.videos);
+                console.log(`✅ 6. After processing, variant has ${variant.videos?.length || 0} video(s)`);
               } catch (err) {
-                // If processing fails, KEEP THE ORIGINAL VIDEOS
-                console.error(`❌ Failed to process videos for ${productObj.name}, keeping originals:`, err);
-                variant.videos = originalVideos; // Restore original data
+                console.error(`❌ 7. generateFreshVideoUrls CRASHED:`, err.message, err.stack);
               }
-              
-              // ⚠️ DEBUG: Log AFTER processing
-              console.log(`🔄 After processing, variant has ${variant.videos?.length || 0} video(s)`);
             }
           }
         }
@@ -543,9 +549,11 @@ const listProduct = async (req, res) => {
       })
     );
     
+    console.log('🏁 8. listProduct function COMPLETED - sending response');
     res.status(200).json({ success: true, products: processedProducts });
+    
   } catch (error) {
-    console.error("listProduct error:", error);
+    console.error('💥 9. listProduct TOP-LEVEL ERROR:', error.message, error.stack);
     res.status(500).json({ success: false, message: "Failed to fetch products." });
   }
 };
