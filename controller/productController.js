@@ -392,15 +392,30 @@ const updateProduct = async (req, res) => {
 
         const newVideos = uploadedVideoUrlsForIndex[i] || [];
 
-        return {
-          color,
-          images: newImage ? [newImage] : existingMatch?.images || [],
-          videos: newVideos.length > 0 ? newVideos : existingMatch?.videos || [],
-          stock:
-            typeof variantStocks[i] === "number"
-              ? variantStocks[i]
-              : existingMatch?.stock ?? fallbackStock,
-        };
+// Safely get existing videos
+let existingVideos = [];
+if (existingMatch && existingMatch.videos) {
+  if (Array.isArray(existingMatch.videos)) {
+    // Filter out corrupted string arrays
+    existingVideos = existingMatch.videos.filter(v => {
+      if (Array.isArray(v)) {
+        console.warn('⚠️ Removing corrupted array video:', v);
+        return false;
+      }
+      return true;
+    });
+  }
+}
+
+return {
+  color,
+  images: newImage ? [newImage] : existingMatch?.images || [],
+  videos: newVideos.length > 0 ? newVideos : existingVideos, // Use cleaned array
+  stock: typeof variantStocks[i] === "number"
+    ? variantStocks[i]
+    : existingMatch?.stock ?? fallbackStock,
+};
+
       });
     }
 
@@ -441,69 +456,58 @@ const updateProduct = async (req, res) => {
 };
 const generateFreshVideoUrls = async (videosArray) => {
   if (!videosArray || !Array.isArray(videosArray)) {
-    console.warn('⚠️ generateFreshVideoUrls: Input is not a valid array:', videosArray);
+    console.warn('⚠️ generateFreshVideoUrls: Invalid input', videosArray);
     return videosArray;
   }
 
-  console.log(`🔄 generateFreshVideoUrls processing ${videosArray.length} video(s)`);
+  console.log(`🔄 Processing ${videosArray.length} video(s) in ${process.env.NODE_ENV}`);
   
-  try {
-    const updatedVideos = await Promise.all(
-      videosArray.map(async (video, index) => {
-        console.log(`  Processing video ${index}:`, video);
-        
-        // ✅ KEEP YOUR ORIGINAL LOGIC HERE - this is what processes videos!
-        if (typeof video === 'string') {
-          // Old format string - generate signed URL
-          try {
-            const signedUrl = await getSignedVideoUrl(video, 24 * 3600);
-            console.log(`  ✅ Generated signed URL for string video: ${video.substring(0, 30)}...`);
-            return {
-              key: video,
-              signedUrl: signedUrl,
-              expiresAt: Date.now() + (24 * 3600 * 1000)
-            };
-          } catch (err) {
-            console.error(`  ❌ Failed to generate URL for ${video}:`, err.message);
-            return video; // Return as-is if generation fails
-          }
-        } else if (video && typeof video === 'object' && video.key) {
-          // Already an object - refresh if expired or expiring soon
-          const isExpired = !video.expiresAt || video.expiresAt < Date.now();
-          const isExpiringSoon = video.expiresAt && 
-                                (video.expiresAt - Date.now()) < (60 * 60 * 1000); // 1 hour
-          
-          if (isExpired || isExpiringSoon) {
-            try {
-              const newSignedUrl = await getSignedVideoUrl(video.key, 24 * 3600);
-              console.log(`  ✅ Refreshed signed URL for: ${video.key.substring(0, 30)}...`);
-              return {
-                ...video,
-                signedUrl: newSignedUrl,
-                expiresAt: Date.now() + (24 * 3600 * 1000)
-              };
-            } catch (err) {
-              console.error(`  ❌ Failed to refresh URL for ${video.key}:`, err.message);
-              return video; // Keep original if refresh fails
-            }
-          }
-          console.log(`  ✅ Video ${video.key.substring(0, 30)}... has valid URL`);
-          return video;
+  const updatedVideos = await Promise.all(
+    videosArray.map(async (video) => {
+      // FIX: Handle string videos that should become objects
+      if (typeof video === 'string') {
+        // Check if it's already a Cloudinary URL (image)
+        if (video.includes('cloudinary.com')) {
+          console.warn(`⚠️ Skipping Cloudinary URL as video: ${video.substring(0, 50)}...`);
+          return null;
         }
         
-        console.warn(`  ⚠️ Unknown video format at index ${index}:`, video);
+        try {
+          // Try to generate signed URL
+          console.log(`🔗 Generating URL for: ${video.substring(0, 30)}...`);
+          const signedUrl = await getSignedVideoUrl(video, 24 * 3600);
+          
+          return {
+            key: video,
+            signedUrl: signedUrl,
+            expiresAt: Date.now() + (24 * 3600 * 1000)
+          };
+        } catch (err) {
+          console.error(`❌ Failed to generate URL for "${video}":`, err.message);
+          // ⚠️ IMPORTANT: Return the string wrapped in an object, not null!
+          return {
+            key: video,
+            signedUrl: null,
+            error: err.message
+          };
+        }
+      }
+      
+      // If already an object with key, keep it
+      if (video && typeof video === 'object' && video.key) {
         return video;
-      })
-    );
-    
-    console.log(`✅ generateFreshVideoUrls completed`);
-    return updatedVideos;
-  } catch (error) {
-    // ⚠️ CRITICAL: This catches if the ENTIRE Promise.all fails
-    console.error('🔥 generateFreshVideoUrls CRASHED:', error);
-    // Return the original array to prevent data loss
-    return videosArray;
-  }
+      }
+      
+      console.warn('⚠️ Unknown video format:', video);
+      return null;
+    })
+  );
+  
+  // Filter out nulls but keep objects (even with signedUrl: null)
+  const validVideos = updatedVideos.filter(v => v !== null);
+  console.log(`✅ Processed ${validVideos.length} videos`);
+  
+  return validVideos;
 };
 // Update listProduct:
 const listProduct = async (req, res) => {
