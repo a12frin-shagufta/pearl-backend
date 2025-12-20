@@ -28,6 +28,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
   'http://localhost:5174',
   'https://pearl-admin-blush.vercel.app',
   'https://peasent-pearl.vercel.app',
+  'http://localhost:3000',            
 ];
 
 // Middleware to log undefined origins

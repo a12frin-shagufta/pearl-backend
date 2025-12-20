@@ -9,7 +9,8 @@ import {
   removeProduct,
   singleProduct,
   updateProduct,
-  decrementStock
+  decrementStock,
+  debugProductVideo
 } from "../controller/productController.js"; // adjust path if necessary
 import verifyAdminToken from "../middleware/verifyAdminToken.js";
 
@@ -95,5 +96,6 @@ productRouter.post("/single", singleProduct);
 productRouter.post("/remove", verifyAdminToken, removeProduct);
 productRouter.post("/decrement-stock", decrementStock);
 
+productRouter.get("/debug-video", debugProductVideo)
 
 export default productRouter;

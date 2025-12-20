@@ -682,28 +682,108 @@ const decrementStock = async (req, res) => {
 // Add to your productController.js
 const debugProductVideo = async (req, res) => {
   try {
+    console.log('🔍 Debug endpoint called');
     const { productId } = req.query;
+    
+    // Check if productId exists
+    if (!productId) {
+      console.log('❌ No productId provided');
+      return res.status(400).json({ 
+        success: false, 
+        error: "productId query parameter is required" 
+      });
+    }
+    
+    console.log(`🔍 Looking for product: ${productId}`);
+    
+    // Find product
     const product = await productModel.findById(productId);
     
+    if (!product) {
+      console.log(`❌ Product not found: ${productId}`);
+      return res.status(404).json({ 
+        success: false, 
+        error: "Product not found" 
+      });
+    }
+    
+    console.log(`✅ Found product: ${product.name}`);
+    
+    // Convert to plain object safely
+    const productObj = product.toObject ? product.toObject() : product;
+    
+    // Build response
     const debugInfo = {
+      success: true,
       productId,
-      variants: product?.variants?.map(v => ({
-        color: v.color,
-        videosCount: v.videos?.length,
-        videos: v.videos?.map(vid => ({
-          type: typeof vid,
-          isString: typeof vid === 'string',
-          isObject: typeof vid === 'object',
-          hasKey: vid?.key,
-          hasSignedUrl: vid?.signedUrl,
-          value: typeof vid === 'string' ? vid.substring(0, 50) + '...' : vid
-        }))
-      }))
+      productName: productObj.name,
+      variants: []
     };
     
+    // Safely check variants
+    if (productObj.variants && Array.isArray(productObj.variants)) {
+      productObj.variants.forEach((variant, idx) => {
+        const variantInfo = {
+          index: idx,
+          color: variant.color || 'Unknown',
+          hasVideos: !!(variant.videos && variant.videos.length > 0),
+          videosCount: variant.videos ? variant.videos.length : 0,
+          videos: []
+        };
+        
+        // Safely check videos
+        if (variant.videos && Array.isArray(variant.videos)) {
+          variant.videos.forEach((video, vidIdx) => {
+            if (typeof video === 'string') {
+              variantInfo.videos.push({
+                index: vidIdx,
+                type: 'string',
+                value: video.substring(0, 30) + '...',
+                isB2Key: !video.includes('http') && !video.includes('/')
+              });
+            } else if (video && typeof video === 'object') {
+              variantInfo.videos.push({
+                index: vidIdx,
+                type: 'object',
+                hasKey: !!video.key,
+                key: video.key,
+                hasSignedUrl: !!video.signedUrl,
+                signedUrlPreview: video.signedUrl ? 
+                  '...' + video.signedUrl.substring(video.signedUrl.length - 20) : null,
+                hasExpiresAt: !!video.expiresAt,
+                expiresAt: video.expiresAt,
+                isExpired: video.expiresAt ? video.expiresAt < Date.now() : null
+              });
+            } else {
+              variantInfo.videos.push({
+                index: vidIdx,
+                type: 'unknown',
+                raw: video
+              });
+            }
+          });
+        }
+        
+        debugInfo.variants.push(variantInfo);
+      });
+    }
+    
+    console.log(`📊 Debug info generated for ${productId}`);
+    
+    // Send response with CORS headers explicitly
+    res.header('Access-Control-Allow-Origin', '*');
     res.json(debugInfo);
+    
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('🔥 debugProductVideo CRASHED:', error);
+    
+    // Send error with CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+    });
   }
 };
 
