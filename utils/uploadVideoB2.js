@@ -79,6 +79,15 @@ export const uploadToB2 = async (filePath, fileName, mimeType, fs) => {
 // Generate signed URL
 export const getSignedVideoUrl = async (key, expiresIn = 7200) => {
   console.log(`🔗 getSignedVideoUrl START for key: "${key?.substring(0, 50)}..."`);
+    if (!key || typeof key !== 'string') {
+    throw new Error(`Invalid video key: ${typeof key} (${key})`);
+  }
+  
+  if (key.includes('cloudinary.com')) {
+    throw new Error(`Cloudinary URL passed as video key: ${key.substring(0, 50)}...`);
+  }
+  
+  console.log(`🔗 getSignedVideoUrl called for key: "${key.substring(0, 50)}..."`);
   
   try {
     // Check if it's a Cloudinary URL (old format)

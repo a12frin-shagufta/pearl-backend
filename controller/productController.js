@@ -159,10 +159,50 @@ const addProduct = async (req, res) => {
       const videoFile = req.files?.[`variantVideo${i}`]?.[0] || null;
       
       // Log file info
-      if (videoFile) {
-        const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
-        console.log(`📤 PRODUCTION: Found video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
-      }
+if (videoFile) {
+  const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
+  console.log(`📤 Uploading video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
+  
+  try {
+    // 1. Upload to B2
+    console.log(`🔑 Step 1/2: Uploading to B2...`);
+    const b2Key = await uploadToB2(
+      videoFile.path,
+      videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"),
+      videoFile.mimetype,
+      fs
+    );
+    
+    console.log(`✅ B2 upload successful: ${b2Key}`);
+    
+    // 2. Generate signed URL - CRITICAL STEP
+    console.log(`🔗 Step 2/2: Generating signed URL...`);
+    const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
+    
+    if (!signedUrl || typeof signedUrl !== 'string' || signedUrl.length < 10) {
+      throw new Error(`Invalid signed URL generated: ${signedUrl}`);
+    }
+    
+    console.log(`✅ Signed URL generated (${signedUrl.length} chars)`);
+    console.log(`🔗 URL preview: ${signedUrl.substring(0, 80)}...`);
+    
+    // 3. Store as proper object
+    uploadedByIndex[i].videos.push({
+      key: b2Key,
+      signedUrl: signedUrl,
+      expiresAt: Date.now() + (24 * 3600 * 1000),
+      generatedAt: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error(`🔥 CRITICAL: Video processing FAILED for "${videoFile.originalname}"`);
+    console.error(`🔥 Error: ${error.message}`);
+    console.error(`🔥 Stack: ${error.stack}`);
+    
+    // 🚫 NO STRING FALLBACK - THROW ERROR
+    throw new Error(`Video processing failed for "${videoFile.originalname}": ${error.message}. Required: signed URL generation.`);
+  }
+}
       
       if (imageFile) {
         console.log(`  🖼️ variantImage${i}: "${imageFile.originalname}" → ${(imageFile.size / 1024 / 1024).toFixed(1)}MB`);
@@ -246,7 +286,48 @@ const addProduct = async (req, res) => {
     }
 
     const globalStockNumber = Number(stock) || 0;
-
+//Validation 
+console.log('🔍 Validating video objects before saving...');
+for (let i = 0; i < colorArray.length; i++) {
+  const color = colorArray[i];
+  const videos = uploadedByIndex[i]?.videos || [];
+  
+  console.log(`  Checking ${videos.length} video(s) for color "${color}"`);
+  
+  for (const video of videos) {
+    // Check 1: No strings allowed
+    if (typeof video === 'string') {
+      console.error(`❌ REJECTED: Video stored as STRING for color "${color}": "${video.substring(0, 50)}..."`);
+      throw new Error(`VIDEO_ERROR: Video for color "${color}" stored as string. Expected object with signedUrl.`);
+    }
+    
+    // Check 2: Must be an object
+    if (!video || typeof video !== 'object') {
+      console.error(`❌ REJECTED: Invalid video type for color "${color}": ${typeof video}`);
+      throw new Error(`VIDEO_ERROR: Video for color "${color}" is invalid type: ${typeof video}`);
+    }
+    
+    // Check 3: Must have key and signedUrl
+    if (!video.key || !video.signedUrl) {
+      console.error(`❌ REJECTED: Video object missing required fields for color "${color}":`, {
+        hasKey: !!video.key,
+        hasSignedUrl: !!video.signedUrl,
+        video
+      });
+      throw new Error(`VIDEO_ERROR: Video object for color "${color}" missing key or signedUrl.`);
+    }
+    
+    // Check 4: Signed URL must be valid
+    if (!video.signedUrl.includes('https://') || !video.signedUrl.includes('.backblazeb2.com')) {
+      console.error(`❌ REJECTED: Invalid signed URL format for color "${color}": ${video.signedUrl.substring(0, 100)}`);
+      throw new Error(`VIDEO_ERROR: Invalid signed URL format for color "${color}". Must be Backblaze B2 URL.`);
+    }
+    
+    console.log(`  ✅ Video OK for color "${color}": ${video.key.substring(0, 30)}...`);
+  }
+}
+console.log('✅ All video objects validated successfully!');
+// end validation 
     // Build variants array
     const variants = colorArray.map((color, i) => ({
       color: String(color).trim(),
@@ -469,6 +550,24 @@ const updateProduct = async (req, res) => {
             : existingMatch?.stock ?? fallbackStock,
         };
       });
+      
+      // 🚨 ADD VALIDATION HERE - RIGHT AFTER BUILDING VARIANTS
+      console.log('🔍 Validating videos in update...');
+      for (const variant of variants) {
+        console.log(`  Checking ${variant.videos?.length || 0} videos for ${variant.color}`);
+        for (const video of variant.videos || []) {
+          if (typeof video === 'string') {
+            console.error(`❌ UPDATE_REJECTED: Video as string for "${variant.color}": ${video.substring(0, 50)}...`);
+            throw new Error(`UPDATE_ERROR: Video for "${variant.color}" stored as string`);
+          }
+          if (!video?.signedUrl) {
+            console.error(`❌ UPDATE_REJECTED: Missing signedUrl for "${variant.color}":`, video);
+            throw new Error(`UPDATE_ERROR: Video for "${variant.color}" missing signedUrl`);
+          }
+          console.log(`  ✅ Video OK for ${variant.color}: ${video.key?.substring(0, 30)}...`);
+        }
+      }
+      console.log('✅ All update videos validated!');
     }
 
     const updateData = {
@@ -491,7 +590,11 @@ const updateProduct = async (req, res) => {
       difficulty: req.body.difficulty || existing.difficulty,
     };
 
-    if (variants) updateData.variants = variants;
+    // ✅ ADD VARIANTS ONLY ONCE (and only if they exist)
+    if (variants) {
+      updateData.variants = variants;
+    }
+    
     if (req.body.size !== undefined) updateData.size = req.body.size;
 
     const updated = await productModel.findByIdAndUpdate(id, updateData, {
