@@ -158,11 +158,12 @@ const addProduct = async (req, res) => {
       const imageFile = req.files?.[`variantImage${i}`]?.[0] || null;
       const videoFile = req.files?.[`variantVideo${i}`]?.[0] || null;
       
-      // Log sizes immediately
+      // Log file info
       if (videoFile) {
         const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
-        console.log(`  🎥 variantVideo${i}: "${videoFile.originalname}" → ${sizeMB}MB`);
+        console.log(`📤 PRODUCTION: Found video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
       }
+      
       if (imageFile) {
         console.log(`  🖼️ variantImage${i}: "${imageFile.originalname}" → ${(imageFile.size / 1024 / 1024).toFixed(1)}MB`);
       }
@@ -178,9 +179,6 @@ const addProduct = async (req, res) => {
       }
     }
 
-    // ✅ REMOVE THIS DUPLICATE DECLARATION (line 53 in your code)
-    // const uploadedByIndex = {}; // ❌ DELETE THIS LINE
-
     try {
       for (let i = 0; i < colorArray.length; i++) {
         const { imageFile, videoFile } = perIndexFiles[i];
@@ -195,23 +193,44 @@ const addProduct = async (req, res) => {
           const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
           console.log(`📤 Uploading video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
           
-          // 🎥 Upload video to B2
-          const b2Key = await uploadToB2(
-            videoFile.path,
-            videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"),
-            videoFile.mimetype,
-            fs
-          );
-          
-          // Generate signed URL for private bucket
-          const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
-          
-          console.log(`✅ B2 uploaded: ${b2Key} → Signed URL generated`);
-          uploadedByIndex[i].videos.push({
-            key: b2Key,
-            signedUrl: signedUrl,
-            expiresAt: Date.now() + (24 * 3600 * 1000)
-          });
+          try {
+            console.log(`🔑 1. Calling uploadToB2 for ${videoFile.originalname}`);
+            
+            const b2Key = await uploadToB2(
+              videoFile.path,
+              videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"),
+              videoFile.mimetype,
+              fs
+            );
+            
+            console.log(`✅ 2. uploadToB2 SUCCESS: ${b2Key}`);
+            
+            console.log(`🔗 3. Calling getSignedVideoUrl for ${b2Key}`);
+            console.log(`🌍 4. NODE_ENV: ${process.env.NODE_ENV}`);
+            
+            const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
+            
+            console.log(`✅ 6. getSignedVideoUrl SUCCESS, URL length: ${signedUrl.length}`);
+            
+            uploadedByIndex[i].videos.push({
+              key: b2Key,
+              signedUrl: signedUrl,
+              expiresAt: Date.now() + (24 * 3600 * 1000)
+            });
+            
+            console.log(`🎉 9. Video object created and pushed to uploadedByIndex[${i}]`);
+            
+          } catch (error) {
+            console.error(`🔥 ERROR in video processing for ${videoFile.originalname}:`, error.message);
+            console.error(`🔥 Error stack:`, error.stack);
+            
+            // Fallback: Save with error info
+            uploadedByIndex[i].videos.push({
+              key: videoFile.originalname,
+              signedUrl: null,
+              error: error.message
+            });
+          }
         }
       }
     } catch (uploadError) {
@@ -232,7 +251,7 @@ const addProduct = async (req, res) => {
     const variants = colorArray.map((color, i) => ({
       color: String(color).trim(),
       images: uploadedByIndex[i]?.images || [],
-      videos: uploadedByIndex[i]?.videos || [], // Now this contains objects, not just strings
+      videos: uploadedByIndex[i]?.videos || [],
       stock: typeof variantStocks[i] === "number" ? variantStocks[i] : globalStockNumber,
     }));
 
@@ -262,12 +281,29 @@ const addProduct = async (req, res) => {
     });
   } catch (err) {
     console.error("addProduct error:", err);
+    
+    // Cleanup any uploaded files on error
+    for (let i = 0; i < (colorArray?.length || 0); i++) {
+      const { imageFile, videoFile } = perIndexFiles?.[i] || {};
+      if (imageFile) safeUnlink(imageFile.path);
+      if (videoFile) safeUnlink(videoFile.path);
+    }
+    
     return res.status(500).json({
       success: false,
       message: err.message || "Server error while adding product.",
     });
   }
 };
+
+/**
+ * Update product
+ * Behavior:
+ *  - Expects 'id' in body.
+ *  - Accepts colors (parsedColors) to replace variants (or you can change to smarter merge).
+ *  - Accepts variantImage{i} and variantVideo{i} for those indexes.
+ *  - Accepts per-variant stock via variantStock{i} fields or variantStocks JSON array.
+ */
 /**
  * Update product
  * Behavior:
@@ -295,6 +331,7 @@ const updateProduct = async (req, res) => {
 
     let variants;
 
+    // If colors are provided, update variants
     if (parsedColors.length > 0) {
       const variantStocks = readVariantStocks(req, parsedColors.length);
 
@@ -313,7 +350,7 @@ const updateProduct = async (req, res) => {
 
       const variantImageEntries = [];
       const variantVideoEntries = [];
-      const uploadedVideoUrlsForIndex = {}; // ✅ DECLARE HERE
+      const uploadedVideoUrlsForIndex = {};
 
       for (let i = 0; i < parsedColors.length; i++) {
         const imgKey = `variantImage${i}`;
@@ -392,30 +429,45 @@ const updateProduct = async (req, res) => {
 
         const newVideos = uploadedVideoUrlsForIndex[i] || [];
 
-// Safely get existing videos
-let existingVideos = [];
-if (existingMatch && existingMatch.videos) {
-  if (Array.isArray(existingMatch.videos)) {
-    // Filter out corrupted string arrays
-    existingVideos = existingMatch.videos.filter(v => {
-      if (Array.isArray(v)) {
-        console.warn('⚠️ Removing corrupted array video:', v);
-        return false;
-      }
-      return true;
-    });
-  }
-}
+        // Safely get existing videos
+        let existingVideos = [];
+        if (existingMatch && existingMatch.videos) {
+          if (Array.isArray(existingMatch.videos)) {
+            // Filter out corrupted string arrays and ensure video format consistency
+            existingVideos = existingMatch.videos.filter(v => {
+              if (Array.isArray(v)) {
+                console.warn('⚠️ Removing corrupted array video:', v);
+                return false;
+              }
+              
+              // Convert old string format to object format
+              if (typeof v === 'string') {
+                return !v.includes('cloudinary.com'); // Skip cloudinary image URLs
+              }
+              
+              return v && typeof v === 'object' && v.key;
+            }).map(v => {
+              // Convert old string format to new object format
+              if (typeof v === 'string') {
+                return {
+                  key: v,
+                  signedUrl: null,
+                  originalFormat: 'string'
+                };
+              }
+              return v;
+            });
+          }
+        }
 
-return {
-  color,
-  images: newImage ? [newImage] : existingMatch?.images || [],
-  videos: newVideos.length > 0 ? newVideos : existingVideos, // Use cleaned array
-  stock: typeof variantStocks[i] === "number"
-    ? variantStocks[i]
-    : existingMatch?.stock ?? fallbackStock,
-};
-
+        return {
+          color,
+          images: newImage ? [newImage] : existingMatch?.images || [],
+          videos: newVideos.length > 0 ? newVideos : existingVideos,
+          stock: typeof variantStocks[i] === "number"
+            ? variantStocks[i]
+            : existingMatch?.stock ?? fallbackStock,
+        };
       });
     }
 
@@ -447,13 +499,14 @@ return {
       runValidators: true,
     });
 
-    console.log(`✅ Updated product ${id}: ${parsedColors.length} variants`);
+    console.log(`✅ Updated product ${id}: ${parsedColors.length || existing.variants?.length || 0} variants`);
     res.json({ success: true, message: "Product updated successfully", product: updated });
   } catch (err) {
     console.error("updateProduct error:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
 const generateFreshVideoUrls = async (videosArray) => {
    console.log('🎯 generateFreshVideoUrls CALLED with input:', videosArray);
   console.log('🌍 Current NODE_ENV:', process.env.NODE_ENV);
@@ -515,15 +568,9 @@ const generateFreshVideoUrls = async (videosArray) => {
 // Update listProduct:
 const listProduct = async (req, res) => {
   try {
-    console.log('🚀 1. listProduct function STARTED');
+    console.log('🚀 listProduct STARTED in', process.env.NODE_ENV);
     const products = await productModel.find({});
-    console.log(`📦 2. Found ${products.length} raw products from DB`);
-    
-    // Find a product you know has a video
-    const testProduct = products.find(p => p._id.toString() === '68d94165cefcdfb41087554e');
-    if (testProduct) {
-      console.log('🔍 3. Test product variant 0 videos:', testProduct.variants?.[0]?.videos);
-    }
+    console.log(`📦 Found ${products.length} raw products from DB`);
     
     const processedProducts = await Promise.all(
       products.map(async (product, index) => {
@@ -531,16 +578,28 @@ const listProduct = async (req, res) => {
         
         if (productObj.variants) {
           for (const variant of productObj.variants) {
-            // ⚠️ ADD THIS LOG HERE - Most important!
-            console.log(`🔄 4. Processing variant ${variant.color} with ${variant.videos?.length || 0} videos`);
-            
             if (variant.videos && variant.videos.length > 0) {
-              console.log(`🎬 5. Calling generateFreshVideoUrls for ${variant.videos.length} videos`);
+              console.log(`🎬 Processing ${variant.videos.length} videos for ${productObj.name}`);
+              
               try {
+                // Store original videos as backup
+                const originalVideos = [...variant.videos];
                 variant.videos = await generateFreshVideoUrls(variant.videos);
-                console.log(`✅ 6. After processing, variant has ${variant.videos?.length || 0} video(s)`);
+                
+                // ⚠️ SAFETY CHECK: If processing returned empty array, restore originals
+                if (variant.videos.length === 0 && originalVideos.length > 0) {
+                  console.warn(`⚠️ Video processing returned empty for ${productObj.name}, keeping originals`);
+                  variant.videos = originalVideos.map(v => 
+                    typeof v === 'string' ? { key: v, signedUrl: null } : v
+                  );
+                }
+                
               } catch (err) {
-                console.error(`❌ 7. generateFreshVideoUrls CRASHED:`, err.message, err.stack);
+                console.error(`❌ Video processing failed for ${productObj.name}:`, err.message);
+                // On error, keep original videos but convert strings to objects
+                variant.videos = (variant.videos || []).map(v => 
+                  typeof v === 'string' ? { key: v, signedUrl: null } : v
+                );
               }
             }
           }
@@ -549,12 +608,17 @@ const listProduct = async (req, res) => {
       })
     );
     
-    console.log('🏁 8. listProduct function COMPLETED - sending response');
+    console.log('🏁 listProduct COMPLETED');
     res.status(200).json({ success: true, products: processedProducts });
     
   } catch (error) {
-    console.error('💥 9. listProduct TOP-LEVEL ERROR:', error.message, error.stack);
-    res.status(500).json({ success: false, message: "Failed to fetch products." });
+    console.error('💥 listProduct TOP-LEVEL ERROR:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to fetch products.",
+      // Optional: Include error in development only
+      ...(process.env.NODE_ENV === 'development' && { error: error.message })
+    });
   }
 };
 
