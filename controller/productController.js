@@ -439,57 +439,77 @@ const updateProduct = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
 const generateFreshVideoUrls = async (videosArray) => {
-  if (!videosArray || !Array.isArray(videosArray)) return videosArray;
+  if (!videosArray || !Array.isArray(videosArray)) {
+    console.warn('⚠️ generateFreshVideoUrls: Input is not a valid array:', videosArray);
+    return videosArray;
+  }
+
+  console.log(`🔄 generateFreshVideoUrls processing ${videosArray.length} video(s)`);
   
-  const updatedVideos = await Promise.all(
-    videosArray.map(async (video) => {
-      if (typeof video === 'string') {
-        // Old format string - generate signed URL
-        try {
-          const signedUrl = await getSignedVideoUrl(video, 24 * 3600); // 24 hours
-          return {
-            key: video,
-            signedUrl: signedUrl,
-            expiresAt: Date.now() + (24 * 3600 * 1000)
-          };
-        } catch (err) {
-          console.error(`Failed to generate URL for ${video}:`, err);
-          return video; // Return as-is if generation fails
-        }
-      } else if (video && typeof video === 'object' && video.key) {
-        // Already an object - refresh if expired or expiring soon
-        const isExpired = !video.expiresAt || video.expiresAt < Date.now();
-        const isExpiringSoon = video.expiresAt && 
-                              (video.expiresAt - Date.now()) < (60 * 60 * 1000); // 1 hour
+  try {
+    const updatedVideos = await Promise.all(
+      videosArray.map(async (video, index) => {
+        console.log(`  Processing video ${index}:`, video);
         
-        if (isExpired || isExpiringSoon) {
+        // ✅ KEEP YOUR ORIGINAL LOGIC HERE - this is what processes videos!
+        if (typeof video === 'string') {
+          // Old format string - generate signed URL
           try {
-            const newSignedUrl = await getSignedVideoUrl(video.key, 24 * 3600);
+            const signedUrl = await getSignedVideoUrl(video, 24 * 3600);
+            console.log(`  ✅ Generated signed URL for string video: ${video.substring(0, 30)}...`);
             return {
-              ...video,
-              signedUrl: newSignedUrl,
+              key: video,
+              signedUrl: signedUrl,
               expiresAt: Date.now() + (24 * 3600 * 1000)
             };
           } catch (err) {
-            console.error(`Failed to refresh URL for ${video.key}:`, err);
-            return video;
+            console.error(`  ❌ Failed to generate URL for ${video}:`, err.message);
+            return video; // Return as-is if generation fails
           }
+        } else if (video && typeof video === 'object' && video.key) {
+          // Already an object - refresh if expired or expiring soon
+          const isExpired = !video.expiresAt || video.expiresAt < Date.now();
+          const isExpiringSoon = video.expiresAt && 
+                                (video.expiresAt - Date.now()) < (60 * 60 * 1000); // 1 hour
+          
+          if (isExpired || isExpiringSoon) {
+            try {
+              const newSignedUrl = await getSignedVideoUrl(video.key, 24 * 3600);
+              console.log(`  ✅ Refreshed signed URL for: ${video.key.substring(0, 30)}...`);
+              return {
+                ...video,
+                signedUrl: newSignedUrl,
+                expiresAt: Date.now() + (24 * 3600 * 1000)
+              };
+            } catch (err) {
+              console.error(`  ❌ Failed to refresh URL for ${video.key}:`, err.message);
+              return video; // Keep original if refresh fails
+            }
+          }
+          console.log(`  ✅ Video ${video.key.substring(0, 30)}... has valid URL`);
+          return video;
         }
+        
+        console.warn(`  ⚠️ Unknown video format at index ${index}:`, video);
         return video;
-      }
-      return video;
-    })
-  );
-  
-  return updatedVideos;
+      })
+    );
+    
+    console.log(`✅ generateFreshVideoUrls completed`);
+    return updatedVideos;
+  } catch (error) {
+    // ⚠️ CRITICAL: This catches if the ENTIRE Promise.all fails
+    console.error('🔥 generateFreshVideoUrls CRASHED:', error);
+    // Return the original array to prevent data loss
+    return videosArray;
+  }
 };
-
 // Update listProduct:
 const listProduct = async (req, res) => {
   try {
     const products = await productModel.find({});
+    console.log(`📦 Fetched ${products.length} raw products from DB`);
     
     const processedProducts = await Promise.all(
       products.map(async (product) => {
@@ -497,12 +517,24 @@ const listProduct = async (req, res) => {
         
         if (productObj.variants) {
           for (const variant of productObj.variants) {
-            if (variant.videos && variant.videos.length > 0) {
-              variant.videos = await generateFreshVideoUrls(variant.videos);
+            // ⚠️ SAFETY CHECK: Log BEFORE processing
+            const originalVideos = variant.videos;
+            if (originalVideos && originalVideos.length > 0) {
+              console.log(`🎬 Found ${originalVideos.length} video(s) for variant ${variant.color} in product ${productObj.name}`);
+              
+              try {
+                variant.videos = await generateFreshVideoUrls(variant.videos);
+              } catch (err) {
+                // If processing fails, KEEP THE ORIGINAL VIDEOS
+                console.error(`❌ Failed to process videos for ${productObj.name}, keeping originals:`, err);
+                variant.videos = originalVideos; // Restore original data
+              }
+              
+              // ⚠️ DEBUG: Log AFTER processing
+              console.log(`🔄 After processing, variant has ${variant.videos?.length || 0} video(s)`);
             }
           }
         }
-        
         return productObj;
       })
     );
