@@ -11,22 +11,30 @@ import { deleteFromB2 } from "../utils/deleteVideoB2.js";
  * - resource_type: "auto" => works for images AND videos
  */
 // controllers/productController.js
-const uploadToCloudinary = async (filePath, type = "image") => {
+const uploadToCloudinary = async (fileBuffer, fileName, type = "image") => {
   try {
-    const options =
-      type === "video"
-        ? { resource_type: "video" }
-        : {
-            resource_type: "image",
-            format: "jpg", // convert any image to JPG
-          };
+    const options = type === "video"
+      ? { resource_type: "video" }
+      : {
+          resource_type: "image",
+          format: "jpg", // convert any image to JPG
+        };
 
-    const res = await cloudinary.uploader.upload(filePath, options);
-    console.log("✅ Uploaded to Cloudinary:", {
+    // Convert buffer to base64 for Cloudinary
+    const b64 = Buffer.from(fileBuffer).toString('base64');
+    let dataURI;
+    
+    if (type === 'video') {
+      dataURI = `data:video/mp4;base64,${b64}`;
+    } else {
+      dataURI = `data:image/jpeg;base64,${b64}`;
+    }
+
+    const res = await cloudinary.uploader.upload(dataURI, options);
+    console.log("✅ Uploaded to Cloudinary from buffer:", {
       public_id: res.public_id,
-      resource_type: res.resource_type,
-      format: res.format,
-      url: res.secure_url,
+      type: type,
+      url: res.secure_url.substring(0, 80) + '...'
     });
     return res.secure_url;
   } catch (err) {
@@ -34,9 +42,6 @@ const uploadToCloudinary = async (filePath, type = "image") => {
     throw err;
   }
 };
-
-
-
 /**
  * Helper: safe file delete
  */
@@ -142,7 +147,6 @@ const addProduct = async (req, res) => {
 
     const variantStocks = readVariantStocks(req, colorArray.length);
 
-    // ✅ DECLARE uploadedByIndex HERE (at the beginning)
     const uploadedByIndex = {};
     
     // Initialize structure for all indices
@@ -150,184 +154,116 @@ const addProduct = async (req, res) => {
       uploadedByIndex[i] = { images: [], videos: [] };
     }
 
-    // Collect files per index
-    const perIndexFiles = {};
-
+    // Process each variant in a SINGLE loop
     for (let i = 0; i < colorArray.length; i++) {
-      // Safe individual access - no array indexing crash
       const imageFile = req.files?.[`variantImage${i}`]?.[0] || null;
       const videoFile = req.files?.[`variantVideo${i}`]?.[0] || null;
+      const color = colorArray[i];
       
-      // Log file info
-if (videoFile) {
-  const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
-  console.log(`📤 Uploading video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
-  
-  try {
-    // 1. Upload to B2
-    console.log(`🔑 Step 1/2: Uploading to B2...`);
-    const b2Key = await uploadToB2(
-      videoFile.path,
-      videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"),
-      videoFile.mimetype,
-      fs
-    );
-    
-    console.log(`✅ B2 upload successful: ${b2Key}`);
-    
-    // 2. Generate signed URL - CRITICAL STEP
-    console.log(`🔗 Step 2/2: Generating signed URL...`);
-    const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
-    
-    if (!signedUrl || typeof signedUrl !== 'string' || signedUrl.length < 10) {
-      throw new Error(`Invalid signed URL generated: ${signedUrl}`);
-    }
-    
-    console.log(`✅ Signed URL generated (${signedUrl.length} chars)`);
-    console.log(`🔗 URL preview: ${signedUrl.substring(0, 80)}...`);
-    
-    // 3. Store as proper object
-    uploadedByIndex[i].videos.push({
-      key: b2Key,
-      signedUrl: signedUrl,
-      expiresAt: Date.now() + (24 * 3600 * 1000),
-      generatedAt: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error(`🔥 CRITICAL: Video processing FAILED for "${videoFile.originalname}"`);
-    console.error(`🔥 Error: ${error.message}`);
-    console.error(`🔥 Stack: ${error.stack}`);
-    
-    // 🚫 NO STRING FALLBACK - THROW ERROR
-    throw new Error(`Video processing failed for "${videoFile.originalname}": ${error.message}. Required: signed URL generation.`);
-  }
-}
-      
-      if (imageFile) {
-        console.log(`  🖼️ variantImage${i}: "${imageFile.originalname}" → ${(imageFile.size / 1024 / 1024).toFixed(1)}MB`);
-      }
-      
-      perIndexFiles[i] = { imageFile, videoFile };
-      
-      // Safe media validation
+      // Validation: at least one media file required
       if (!imageFile && !videoFile) {
         return res.status(400).json({
           success: false,
-          message: `Missing image/video for color "${colorArray[i]}" (variantImage${i} or variantVideo${i})`,
+          message: `Missing image/video for color "${color}" (variantImage${i} or variantVideo${i})`,
         });
       }
-    }
-
-    try {
-      for (let i = 0; i < colorArray.length; i++) {
-        const { imageFile, videoFile } = perIndexFiles[i];
-
-        if (imageFile) {
-          // 🖼️ Upload image to Cloudinary
-          const url = await uploadToCloudinary(imageFile.path, "image");
-          uploadedByIndex[i].images.push(url);
-        }
+      
+      console.log(`📦 Processing variant ${i} (${color}):`);
+      
+      // --- UPLOAD IMAGE TO CLOUDINARY (if exists) ---
+      if (imageFile) {
+        const sizeMB = (imageFile.size / 1024 / 1024).toFixed(1);
+        console.log(`  🖼️ Image: "${imageFile.originalname}" (${sizeMB}MB)`);
         
-        if (videoFile) {
-          const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
-          console.log(`📤 Uploading video ${i}: "${videoFile.originalname}" (${sizeMB}MB)`);
-          
-          try {
-            console.log(`🔑 1. Calling uploadToB2 for ${videoFile.originalname}`);
-            
-            const b2Key = await uploadToB2(
-              videoFile.path,
-              videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"),
-              videoFile.mimetype,
-              fs
-            );
-            
-            console.log(`✅ 2. uploadToB2 SUCCESS: ${b2Key}`);
-            
-            console.log(`🔗 3. Calling getSignedVideoUrl for ${b2Key}`);
-            console.log(`🌍 4. NODE_ENV: ${process.env.NODE_ENV}`);
-            
-            const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
-            
-            console.log(`✅ 6. getSignedVideoUrl SUCCESS, URL length: ${signedUrl.length}`);
-            
-            uploadedByIndex[i].videos.push({
-              key: b2Key,
-              signedUrl: signedUrl,
-              expiresAt: Date.now() + (24 * 3600 * 1000)
-            });
-            
-            console.log(`🎉 9. Video object created and pushed to uploadedByIndex[${i}]`);
-            
-          } catch (error) {
-            console.error(`🔥 ERROR in video processing for ${videoFile.originalname}:`, error.message);
-            console.error(`🔥 Error stack:`, error.stack);
-            
-            // Fallback: Save with error info
-            uploadedByIndex[i].videos.push({
-              key: videoFile.originalname,
-              signedUrl: null,
-              error: error.message
-            });
-          }
+        try {
+          console.log(`  ☁️ Uploading image to Cloudinary...`);
+          // ✅ MUST UPDATE uploadToCloudinary function to accept buffer!
+          const url = await uploadToCloudinary(
+            imageFile.buffer, // ← BUFFER, not path!
+            imageFile.originalname,
+            "image"
+          );
+          uploadedByIndex[i].images.push(url);
+          console.log(`  ✅ Image uploaded: ${url.substring(0, 80)}...`);
+        } catch (error) {
+          console.error(`  ❌ Cloudinary upload failed:`, error.message);
+          throw new Error(`Image upload failed for color "${color}": ${error.message}`);
         }
       }
-    } catch (uploadError) {
-      console.error("Upload error:", uploadError);
-      throw uploadError;
-    } finally {
-      // Cleanup temp files
-      for (let i = 0; i < colorArray.length; i++) {
-        const { imageFile, videoFile } = perIndexFiles[i];
-        if (imageFile) safeUnlink(imageFile.path);
-        if (videoFile) safeUnlink(videoFile.path);
+      
+      // --- UPLOAD VIDEO TO B2 (if exists) ---
+      if (videoFile) {
+        const sizeMB = (videoFile.size / 1024 / 1024).toFixed(1);
+        console.log(`  🎥 Video: "${videoFile.originalname}" (${sizeMB}MB)`);
+        
+        try {
+          // 1. Upload video buffer to B2
+          console.log(`  🔑 Step 1/2: Uploading to B2...`);
+          const b2Key = await uploadToB2(
+            videoFile.buffer, // ← BUFFER
+            videoFile.originalname.replace(/\.[^/.]+$/, "-uploaded.mp4"),
+            videoFile.mimetype
+            // NO fs parameter!
+          );
+          
+          console.log(`  ✅ B2 upload successful: ${b2Key}`);
+          
+          // 2. Generate signed URL
+          console.log(`  🔗 Step 2/2: Generating signed URL...`);
+          const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
+          
+          if (!signedUrl || typeof signedUrl !== 'string' || signedUrl.length < 10) {
+            throw new Error(`Invalid signed URL generated: ${signedUrl}`);
+          }
+          
+          console.log(`  ✅ Signed URL generated (${signedUrl.length} chars)`);
+          
+          // 3. Store as proper object
+          uploadedByIndex[i].videos.push({
+            key: b2Key,
+            signedUrl: signedUrl,
+            expiresAt: Date.now() + (24 * 3600 * 1000),
+            generatedAt: new Date().toISOString()
+          });
+          
+        } catch (error) {
+          console.error(`  ❌ Video processing FAILED:`, error.message);
+          console.error(`  🔥 Stack:`, error.stack);
+          throw new Error(`Video processing failed for color "${color}": ${error.message}`);
+        }
       }
+      
+      console.log(`  ✅ Variant ${i} processed\n`);
     }
 
     const globalStockNumber = Number(stock) || 0;
-//Validation 
-console.log('🔍 Validating video objects before saving...');
-for (let i = 0; i < colorArray.length; i++) {
-  const color = colorArray[i];
-  const videos = uploadedByIndex[i]?.videos || [];
-  
-  console.log(`  Checking ${videos.length} video(s) for color "${color}"`);
-  
-  for (const video of videos) {
-    // Check 1: No strings allowed
-    if (typeof video === 'string') {
-      console.error(`❌ REJECTED: Video stored as STRING for color "${color}": "${video.substring(0, 50)}..."`);
-      throw new Error(`VIDEO_ERROR: Video for color "${color}" stored as string. Expected object with signedUrl.`);
-    }
     
-    // Check 2: Must be an object
-    if (!video || typeof video !== 'object') {
-      console.error(`❌ REJECTED: Invalid video type for color "${color}": ${typeof video}`);
-      throw new Error(`VIDEO_ERROR: Video for color "${color}" is invalid type: ${typeof video}`);
+    // --- VALIDATION (strict - no strings allowed) ---
+    console.log('🔍 Validating video objects before saving...');
+    for (let i = 0; i < colorArray.length; i++) {
+      const color = colorArray[i];
+      const videos = uploadedByIndex[i]?.videos || [];
+      
+      console.log(`  Checking ${videos.length} video(s) for color "${color}"`);
+      
+      for (const video of videos) {
+        // Check 1: No strings allowed
+        if (typeof video === 'string') {
+          console.error(`❌ REJECTED: Video stored as STRING for "${color}": "${video.substring(0, 50)}..."`);
+          throw new Error(`VIDEO_ERROR: Video for "${color}" stored as string.`);
+        }
+        
+        // Check 2: Must have key and signedUrl
+        if (!video?.key || !video?.signedUrl) {
+          console.error(`❌ REJECTED: Missing key/signedUrl for "${color}":`, video);
+          throw new Error(`VIDEO_ERROR: Video for "${color}" missing key or signedUrl.`);
+        }
+        
+        console.log(`  ✅ Video OK: ${video.key.substring(0, 30)}...`);
+      }
     }
+    console.log('✅ All videos validated!\n');
     
-    // Check 3: Must have key and signedUrl
-    if (!video.key || !video.signedUrl) {
-      console.error(`❌ REJECTED: Video object missing required fields for color "${color}":`, {
-        hasKey: !!video.key,
-        hasSignedUrl: !!video.signedUrl,
-        video
-      });
-      throw new Error(`VIDEO_ERROR: Video object for color "${color}" missing key or signedUrl.`);
-    }
-    
-    // Check 4: Signed URL must be valid
-    if (!video.signedUrl.includes('https://') || !video.signedUrl.includes('.backblazeb2.com')) {
-      console.error(`❌ REJECTED: Invalid signed URL format for color "${color}": ${video.signedUrl.substring(0, 100)}`);
-      throw new Error(`VIDEO_ERROR: Invalid signed URL format for color "${color}". Must be Backblaze B2 URL.`);
-    }
-    
-    console.log(`  ✅ Video OK for color "${color}": ${video.key.substring(0, 30)}...`);
-  }
-}
-console.log('✅ All video objects validated successfully!');
-// end validation 
     // Build variants array
     const variants = colorArray.map((color, i) => ({
       color: String(color).trim(),
@@ -355,20 +291,18 @@ console.log('✅ All video objects validated successfully!');
     });
 
     await newProduct.save();
+    
+    console.log(`🎉 Product "${name}" added successfully with ${colorArray.length} variant(s)`);
     return res.status(201).json({
       success: true,
       message: "Product added successfully.",
       product: newProduct,
     });
-  } catch (err) {
-    console.error("addProduct error:", err);
     
-    // Cleanup any uploaded files on error
-    for (let i = 0; i < (colorArray?.length || 0); i++) {
-      const { imageFile, videoFile } = perIndexFiles?.[i] || {};
-      if (imageFile) safeUnlink(imageFile.path);
-      if (videoFile) safeUnlink(videoFile.path);
-    }
+  } catch (err) {
+    console.error("💥 addProduct error:", err.message);
+    
+    // NO FILE CLEANUP NEEDED - files are in memory, not on disk!
     
     return res.status(500).json({
       success: false,
@@ -446,55 +380,52 @@ const updateProduct = async (req, res) => {
       }
 
       // --------- IMAGE UPLOAD (Cloudinary) ----------
-      const uploadedImageUrls = variantImageEntries.length
-        ? await Promise.all(
-            variantImageEntries.map((entry) =>
-              uploadToCloudinary(entry.file.path, "image")
-            )
+   const uploadedImageUrls = variantImageEntries.length > 0
+      ? await Promise.all(  // ← FIX: Add await Promise.all()
+          variantImageEntries.map((entry) =>
+            uploadToCloudinary(entry.file.buffer, entry.file.originalname, "image")
           )
-        : [];
+        )
+      : [];
 
       // --------- VIDEO UPLOAD (Backblaze B2) ----------
-      if (variantVideoEntries.length > 0) {
-        console.log(`📤 Uploading ${variantVideoEntries.length} video(s)...`);
+  if (variantVideoEntries.length > 0) {
+      console.log(`📤 Uploading ${variantVideoEntries.length} video(s)...`);
+      
+      for (let i = 0; i < variantVideoEntries.length; i++) {
+        const entry = variantVideoEntries[i];
+        const sizeMB = (entry.file.size / 1024 / 1024).toFixed(1);
+        console.log(`📤 Video ${entry.index}: "${entry.file.originalname}" (${sizeMB}MB)`);
         
-        for (let i = 0; i < variantVideoEntries.length; i++) {
-          const entry = variantVideoEntries[i];
-          const sizeMB = (entry.file.size / 1024 / 1024).toFixed(1);
-          console.log(`📤 Video ${entry.index}: "${entry.file.originalname}" (${sizeMB}MB)`);
+        try {
+          // ✅ CORRECT: Using buffer
+          const b2Key = await uploadToB2(
+            entry.file.buffer,
+            entry.file.originalname,
+            entry.file.mimetype
+          );
           
-          try {
-            const b2Key = await uploadToB2(
-              entry.file.path,
-              entry.file.originalname,
-              entry.file.mimetype,
-              fs
-            );
-            
-            const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
-            
-            uploadedVideoUrlsForIndex[entry.index] = [{
-              key: b2Key,
-              signedUrl: signedUrl,
-              expiresAt: Date.now() + (24 * 3600 * 1000)
-            }];
-            
-            console.log(`✅ Uploaded video for index ${entry.index}: ${b2Key}`);
-          } catch (error) {
-            console.error(`❌ Failed to upload video ${entry.index}:`, error);
-            // Keep existing videos if upload fails
-            const existingMatch = existing.variants?.find(
-              (v, idx) => idx === entry.index || v.color === parsedColors[entry.index]
-            );
-            uploadedVideoUrlsForIndex[entry.index] = existingMatch?.videos || [];
-          }
+          const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
+          
+          uploadedVideoUrlsForIndex[entry.index] = [{
+            key: b2Key,
+            signedUrl: signedUrl,
+            expiresAt: Date.now() + (24 * 3600 * 1000)
+          }];
+          
+          console.log(`✅ Uploaded video for index ${entry.index}: ${b2Key}`);
+        } catch (error) {
+          console.error(`❌ Failed to upload video ${entry.index}:`, error);
+          // Keep existing videos if upload fails
+          const existingMatch = existing.variants?.find(
+            (v, idx) => idx === entry.index || v.color === parsedColors[entry.index]
+          );
+          uploadedVideoUrlsForIndex[entry.index] = existingMatch?.videos || [];
         }
       }
+    }
 
-      // Cleanup temp files
-      [...variantImageEntries, ...variantVideoEntries].forEach(({ file }) =>
-        safeUnlink(file.path)
-      );
+
 
       const fallbackStock = req.body.stock
         ? Number(req.body.stock)

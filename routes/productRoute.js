@@ -21,16 +21,7 @@ const UPLOAD_DIR = path.join(process.cwd(), "tmp", "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // Multer storage
-const storage = multer.diskStorage({ 
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => {
-  // sanitize original name: keep alphanumerics, dot, dash and underscore
-  const safeOriginal = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeOriginal}`;
-  cb(null, name);
-},
-
-});
+const storage = multer.memoryStorage(); 
 
 // Accept image OR video mimetypes
 // productRouter.js
