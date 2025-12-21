@@ -53,10 +53,13 @@ app.use(
         return callback(null, true);
       }
       // Allow listed origins or Vercel preview URLs
-      if (
-        allowedOrigins.includes(origin) ||
-        /^https:\/\/peasent-pearl-.*\.vercel\.app$/.test(origin)
-      ) {
+if (
+  allowedOrigins.includes(origin) ||
+  /^https:\/\/peasent-pearl-.*\.vercel\.app$/.test(origin) ||
+  /^https:\/\/pearl-admin-.*\.vercel\.app$/.test(origin)  // ← ADD THIS LINE
+) {
+  return callback(null, true);
+} {
         return callback(null, true);
       }
       return callback(new Error(`Not allowed by CORS: ${origin}`));
@@ -68,7 +71,8 @@ app.use(
 );
 
 // Body parser
-app.use(express.json());
+app.use(express.json({ limit: '200mb' }));
+// app.use(express.urlencoded({ limit: '200mb', extended: true }));
 
 // Connect services
 connectDb()
