@@ -43,21 +43,22 @@ const getS3Client = () => {
 };
 
 // Upload and return just the key
-export const uploadToB2 = async (filePath, fileName, mimeType, fs) => {
-  console.log(`📤 uploadToB2 START: ${fileName}`);
+
+export const uploadToB2 = async (fileBuffer, fileName, mimeType) => {
+  // ✅ REMOVED: fs parameter
+  console.log(`📤 uploadToB2 from BUFFER: ${fileName} (${fileBuffer.length} bytes)`);
   
   try {
     const s3 = getS3Client();
-    const fileBuffer = fs.readFileSync(filePath);
     const uploadPath = `${Date.now()}-${fileName.replace(/\s+/g, '-')}`;
     
-    console.log(`📦 Uploading to bucket: ${process.env.B2_BUCKET_NAME}, key: ${uploadPath}`);
+    console.log(`📦 Uploading buffer to B2: ${uploadPath}`);
     
     await s3.send(
       new PutObjectCommand({
         Bucket: process.env.B2_BUCKET_NAME,
         Key: uploadPath,
-        Body: fileBuffer,
+        Body: fileBuffer, // ← Direct buffer, no file reading!
         ContentType: mimeType,
         CacheControl: 'public, max-age=31536000',
         Metadata: {
@@ -66,11 +67,11 @@ export const uploadToB2 = async (filePath, fileName, mimeType, fs) => {
       })
     );
     
-    console.log(`✅ uploadToB2 SUCCESS: ${uploadPath}`);
+    console.log(`✅ uploadToB2 SUCCESS from buffer: ${uploadPath}`);
     return uploadPath;
     
   } catch (error) {
-    console.error(`🔥 uploadToB2 FAILED for ${fileName}:`, error.message);
+    console.error(`🔥 uploadToB2 FAILED:`, error.message);
     console.error('🔥 Error details:', error);
     throw error;
   }
