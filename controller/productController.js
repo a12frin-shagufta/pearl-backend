@@ -210,7 +210,7 @@ const addProduct = async (req, res) => {
           
           // 2. Generate signed URL
           console.log(`  🔗 Step 2/2: Generating signed URL...`);
-          const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
+        const signedUrl = await getSignedVideoUrl(b2Key, 7 * 24 * 3600)
           
           if (!signedUrl || typeof signedUrl !== 'string' || signedUrl.length < 10) {
             throw new Error(`Invalid signed URL generated: ${signedUrl}`);
@@ -222,7 +222,7 @@ const addProduct = async (req, res) => {
           uploadedByIndex[i].videos.push({
             key: b2Key,
             signedUrl: signedUrl,
-            expiresAt: Date.now() + (24 * 3600 * 1000),
+            expiresAt: Date.now() + (7 * 24 * 3600),
             generatedAt: new Date().toISOString()
           });
           
@@ -405,12 +405,12 @@ const updateProduct = async (req, res) => {
             entry.file.mimetype
           );
           
-          const signedUrl = await getSignedVideoUrl(b2Key, 24 * 3600);
+          const signedUrl = await getSignedVideoUrl(b2Key, 7 * 24 * 3600)
           
           uploadedVideoUrlsForIndex[entry.index] = [{
             key: b2Key,
             signedUrl: signedUrl,
-            expiresAt: Date.now() + (24 * 3600 * 1000)
+            expiresAt: Date.now() + (7 * 24 * 3600 * 1000)
           }];
           
           console.log(`✅ Uploaded video for index ${entry.index}: ${b2Key}`);
@@ -542,58 +542,89 @@ const updateProduct = async (req, res) => {
 };
 
 const generateFreshVideoUrls = async (videosArray) => {
-   console.log('🎯 generateFreshVideoUrls CALLED with input:', videosArray);
-  console.log('🌍 Current NODE_ENV:', process.env.NODE_ENV);
-  console.log('🔑 B2_BUCKET_NAME exists?', !!process.env.B2_BUCKET_NAME);
+  console.log('🎯 generateFreshVideoUrls CALLED');
+  
   if (!videosArray || !Array.isArray(videosArray)) {
-    console.warn('⚠️ generateFreshVideoUrls: Invalid input', videosArray);
+    console.warn('⚠️ Invalid input', videosArray);
     return videosArray;
   }
 
-  console.log(`🔄 Processing ${videosArray.length} video(s) in ${process.env.NODE_ENV}`);
+  console.log(`🔄 Processing ${videosArray.length} video(s)`);
+  
+  const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000;
+  const SEVEN_DAYS_SECONDS = 7 * 24 * 3600;
   
   const updatedVideos = await Promise.all(
     videosArray.map(async (video) => {
-      // FIX: Handle string videos that should become objects
+      // Handle string videos (old format)
       if (typeof video === 'string') {
-        // Check if it's already a Cloudinary URL (image)
         if (video.includes('cloudinary.com')) {
-          console.warn(`⚠️ Skipping Cloudinary URL as video: ${video.substring(0, 50)}...`);
+          console.warn(`⚠️ Skipping Cloudinary URL: ${video.substring(0, 50)}...`);
           return null;
         }
         
         try {
-          // Try to generate signed URL
-          console.log(`🔗 Generating URL for: ${video.substring(0, 30)}...`);
-          const signedUrl = await getSignedVideoUrl(video, 24 * 3600);
+          console.log(`🔗 Converting string to 7-day URL: ${video.substring(0, 30)}...`);
+          const signedUrl = await getSignedVideoUrl(video, SEVEN_DAYS_SECONDS);
           
           return {
             key: video,
             signedUrl: signedUrl,
-            expiresAt: Date.now() + (24 * 3600 * 1000)
+            expiresAt: Date.now() + SEVEN_DAYS_MS,
+            generatedAt: new Date().toISOString()
           };
         } catch (err) {
-          console.error(`❌ Failed to generate URL for "${video}":`, err.message);
-          // ⚠️ IMPORTANT: Return the string wrapped in an object, not null!
+          console.error(`❌ Failed for string "${video}":`, err.message);
           return {
             key: video,
             signedUrl: null,
-            error: err.message
+            error: err.message,
+            expiresAt: null
           };
         }
       }
       
-      // If already an object with key, keep it
+      // Handle object videos
       if (video && typeof video === 'object' && video.key) {
+        const now = Date.now();
+        const isExpired = video.expiresAt && video.expiresAt < now;
+        const expiresIn24h = video.expiresAt && (video.expiresAt - now) < (24 * 60 * 60 * 1000); // 24 hours warning
+        
+        console.log(`🔍 Checking: ${video.key.substring(0, 30)}...`);
+        console.log(`   Status: ${isExpired ? 'EXPIRED' : expiresIn24h ? 'EXPIRES SOON' : 'VALID'}`);
+        
+        // Refresh if: expired, expires in <24h, or missing signedUrl
+        if (isExpired || expiresIn24h || !video.signedUrl) {
+          console.log(`🔄 Refreshing URL (${isExpired ? 'expired' : 'expiring soon'})...`);
+          try {
+            const signedUrl = await getSignedVideoUrl(video.key, SEVEN_DAYS_SECONDS);
+            return {
+              ...video,
+              signedUrl: signedUrl,
+              expiresAt: now + SEVEN_DAYS_MS,
+              refreshedAt: new Date().toISOString(),
+              previouslyExpired: isExpired
+            };
+          } catch (err) {
+            console.error(`❌ Failed to refresh "${video.key}":`, err.message);
+            return {
+              ...video,
+              signedUrl: null,
+              error: err.message
+            };
+          }
+        }
+        
+        // URL is still valid (>24h left)
+        console.log(`✅ Valid for ${Math.round((video.expiresAt - now) / (1000 * 60 * 60))} more hours`);
         return video;
       }
       
-      console.warn('⚠️ Unknown video format:', video);
+      console.warn('⚠️ Unknown format:', video);
       return null;
     })
   );
   
-  // Filter out nulls but keep objects (even with signedUrl: null)
   const validVideos = updatedVideos.filter(v => v !== null);
   console.log(`✅ Processed ${validVideos.length} videos`);
   
@@ -602,56 +633,81 @@ const generateFreshVideoUrls = async (videosArray) => {
 // Update listProduct:
 const listProduct = async (req, res) => {
   try {
-    console.log('🚀 listProduct STARTED in', process.env.NODE_ENV);
+    console.log('🚀 listProduct STARTED - will refresh expired URLs');
     const products = await productModel.find({});
-    console.log(`📦 Found ${products.length} raw products from DB`);
+    console.log(`📦 Found ${products.length} products`);
     
     const processedProducts = await Promise.all(
       products.map(async (product, index) => {
         const productObj = product.toObject();
+        let needsDbUpdate = false;
         
         if (productObj.variants) {
-          for (const variant of productObj.variants) {
+          for (let i = 0; i < product.variants.length; i++) {
+            const variant = product.variants[i];
+            const variantObj = productObj.variants[i];
+            
             if (variant.videos && variant.videos.length > 0) {
-              console.log(`🎬 Processing ${variant.videos.length} videos for ${productObj.name}`);
+              console.log(`🎬 Processing ${variant.videos.length} videos for ${product.name}`);
               
               try {
-                // Store original videos as backup
                 const originalVideos = [...variant.videos];
-                variant.videos = await generateFreshVideoUrls(variant.videos);
+                const refreshedVideos = await generateFreshVideoUrls(variant.videos);
                 
-                // ⚠️ SAFETY CHECK: If processing returned empty array, restore originals
-                if (variant.videos.length === 0 && originalVideos.length > 0) {
-                  console.warn(`⚠️ Video processing returned empty for ${productObj.name}, keeping originals`);
-                  variant.videos = originalVideos.map(v => 
-                    typeof v === 'string' ? { key: v, signedUrl: null } : v
-                  );
+                // Update response
+                variantObj.videos = refreshedVideos;
+                
+                // Check if any URLs were actually refreshed
+                const wasRefreshed = refreshedVideos.some((v, idx) => 
+                  v.refreshedAt || v.previouslyExpired || 
+                  (originalVideos[idx] && originalVideos[idx].signedUrl !== v.signedUrl)
+                );
+                
+                if (wasRefreshed) {
+                  // Update Mongoose document for potential DB save
+                  product.variants[i].videos = refreshedVideos;
+                  needsDbUpdate = true;
+                  console.log(`🔄 URLs refreshed for ${product.name} - ${variant.color}`);
                 }
                 
               } catch (err) {
-                console.error(`❌ Video processing failed for ${productObj.name}:`, err.message);
-                // On error, keep original videos but convert strings to objects
-                variant.videos = (variant.videos || []).map(v => 
+                console.error(`❌ Video processing failed for ${product.name}:`, err.message);
+                variantObj.videos = (variant.videos || []).map(v => 
                   typeof v === 'string' ? { key: v, signedUrl: null } : v
                 );
               }
             }
           }
         }
+        
+
+        if (needsDbUpdate) {
+          try {
+            await product.save();
+            console.log(`💾 Saved refreshed URLs to DB for: ${product.name}`);
+          } catch (saveErr) {
+            console.error(`❌ Failed to save ${product.name}:`, saveErr.message);
+          }
+        }
+        
+        
         return productObj;
       })
     );
     
-    console.log('🏁 listProduct COMPLETED');
-    res.status(200).json({ success: true, products: processedProducts });
+    console.log('🏁 listProduct COMPLETED - URLs valid for 7 days');
+    res.status(200).json({ 
+      success: true, 
+      products: processedProducts,
+      message: "Video URLs refreshed (7-day validity)"
+    });
     
   } catch (error) {
-    console.error('💥 listProduct TOP-LEVEL ERROR:', error);
+    console.error('💥 listProduct ERROR:', error);
     res.status(500).json({ 
       success: false, 
       message: "Failed to fetch products.",
-      // Optional: Include error in development only
-      ...(process.env.NODE_ENV === 'development' && { error: error.message })
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
