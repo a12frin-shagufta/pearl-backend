@@ -78,9 +78,17 @@ export const uploadToB2 = async (fileBuffer, fileName, mimeType) => {
 };
 
 // Generate signed URL
-export const getSignedVideoUrl = async (key, expiresIn = 7200) => {
-  console.log(`🔗 getSignedVideoUrl START for key: "${key?.substring(0, 50)}..."`);
-    if (!key || typeof key !== 'string') {
+export const getSignedVideoUrl = async (key, expiresIn = 7 * 24 * 3600) => {
+  console.log(`🔗 getSignedVideoUrl CALLED for: "${key?.substring(0, 50)}..."`);
+  
+  // Backblaze B2 maximum: 7 days (604800 seconds)
+  const MAX_EXPIRY = 7 * 24 * 3600; // 604800 seconds
+  const actualExpiry = Math.min(expiresIn, MAX_EXPIRY);
+  
+  console.log(`⏱️ Expiry: Requested ${expiresIn}s, Using ${actualExpiry}s (${Math.round(actualExpiry/3600)}h)`);
+  
+  // Validate key first
+  if (!key || typeof key !== 'string') {
     throw new Error(`Invalid video key: ${typeof key} (${key})`);
   }
   
@@ -88,28 +96,39 @@ export const getSignedVideoUrl = async (key, expiresIn = 7200) => {
     throw new Error(`Cloudinary URL passed as video key: ${key.substring(0, 50)}...`);
   }
   
-  console.log(`🔗 getSignedVideoUrl called for key: "${key.substring(0, 50)}..."`);
-  
   try {
-    // Check if it's a Cloudinary URL (old format)
-    if (key && key.includes('cloudinary.com')) {
-      console.log('☁️ Key is Cloudinary URL, returning as-is');
-      return key;
+    // Check if it's already a signed URL (contains AWS signature)
+    if (key.includes('X-Amz-Signature') || key.includes('X-Amz-Credential') || key.includes('?X-Amz-')) {
+      console.log('🔐 Key is already a signed URL, checking expiry...');
+      
+      // Parse the existing URL to check its expiry
+      try {
+        const url = new URL(key);
+        const params = new URLSearchParams(url.search);
+        const expiresParam = params.get('X-Amz-Expires');
+        
+        if (expiresParam) {
+          const remainingSeconds = parseInt(expiresParam);
+          console.log(`📊 Existing URL has ${remainingSeconds}s (${Math.round(remainingSeconds/3600)}h) remaining`);
+          
+          // If less than 24h left, generate new one
+          if (remainingSeconds < (24 * 3600)) {
+            console.log('🔄 Existing URL expires soon, generating fresh 7-day URL');
+            // Extract the actual key from URL path
+            const pathParts = url.pathname.split('/');
+            const actualKey = pathParts[pathParts.length - 1];
+            return await generateFreshSignedUrl(actualKey, actualExpiry);
+          }
+        }
+      } catch (parseErr) {
+        console.warn('⚠️ Could not parse existing URL, generating fresh one');
+      }
+      return key; // Return existing if still valid
     }
     
-    // Check if it's already a signed URL
-    if (key && (key.includes('X-Amz-Signature') || key.includes('X-Amz-Credential'))) {
-      console.log('🔐 Key is already signed URL');
-      return key;
-    }
+    // Generate fresh signed URL
+    console.log(`🔑 Generating ${Math.round(actualExpiry/3600)}h URL for: ${key.substring(0, 30)}...`);
     
-    // Validate key format
-    if (!key || typeof key !== 'string') {
-      console.error(`❌ Invalid key format:`, key);
-      throw new Error(`Invalid video key: ${key}`);
-    }
-    
-    // It's a B2 key - generate signed URL
     const s3 = getS3Client();
     const command = new GetObjectCommand({
       Bucket: process.env.B2_BUCKET_NAME,
@@ -118,11 +137,10 @@ export const getSignedVideoUrl = async (key, expiresIn = 7200) => {
       ResponseContentDisposition: 'inline',
     });
     
-    console.log(`🔑 Generating signed URL for ${key.substring(0, 30)}...`);
-    const signedUrl = await getSignedUrl(s3, command, { expiresIn });
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: actualExpiry });
     
-    console.log(`✅ getSignedVideoUrl SUCCESS, URL length: ${signedUrl.length}`);
-    console.log(`🔗 URL preview: ${signedUrl.substring(0, 80)}...`);
+    console.log(`✅ Generated ${Math.round(actualExpiry/3600)}h URL (${signedUrl.length} chars)`);
+    console.log(`🔗 Preview: ${signedUrl.substring(0, 80)}...`);
     
     return signedUrl;
     
@@ -131,4 +149,17 @@ export const getSignedVideoUrl = async (key, expiresIn = 7200) => {
     console.error('🔥 Error stack:', error.stack);
     throw error;
   }
+};
+
+// Helper function for fresh URL generation
+const generateFreshSignedUrl = async (key, expiresIn) => {
+  const s3 = getS3Client();
+  const command = new GetObjectCommand({
+    Bucket: process.env.B2_BUCKET_NAME,
+    Key: key,
+    ResponseCacheControl: 'public, max-age=31536000',
+    ResponseContentDisposition: 'inline',
+  });
+  
+  return await getSignedUrl(s3, command, { expiresIn });
 };
