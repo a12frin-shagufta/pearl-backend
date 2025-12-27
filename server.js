@@ -16,7 +16,7 @@ import videoRouter from "./routes/videoRoute.js"
 const app = express();
 const port = process.env.PORT || 3000;
 import mongoose from 'mongoose';
-import cloudinary from './config/cloudinary.js';
+import imagekit from './config/imageKit.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,14 +77,18 @@ app.use(express.json({ limit: '200mb' }));
 // Connect services
 connectDb()
   .then(() => {
+    // const c = mongoose.connection;
+    // console.log("[DB INFO]", { host: c.host, name: c.name, readyState: c.readyState });
+    // console.log("[cloudinary] init ok (server.js):", {
+    //   name: process.env.CLOUDINARY_CLOUD_NAME,
+    //   hasUploader: !!cloudinary.uploader,
+    // });
     const c = mongoose.connection;
     console.log("[DB INFO]", { host: c.host, name: c.name, readyState: c.readyState });
-    console.log("[cloudinary] init ok (server.js):", {
-  name: process.env.CLOUDINARY_CLOUD_NAME,
-  hasUploader: !!cloudinary.uploader,
-});
-
-
+    console.log("[ImageKit] init ok (server.js):", {
+      urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
+      hasUploader: !!imagekit.upload, // ImageKit has .upload method
+    });
     // Routes
     app.use("/api/user", adminRouter);
     app.use("/api/offer", offerRouter);
