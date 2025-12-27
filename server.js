@@ -44,24 +44,49 @@ app.use((req, res, next) => {
 });
 
 // CORS configuration
+// app.use(
+//   cors({
+//     origin: function (origin, callback) {
+//       console.log('CORS check for:', origin);
+//       // Allow requests with no origin (e.g., Postman, server-side scripts)
+//       if (!origin) {
+//         return callback(null, true);
+//       }
+//       // Allow listed origins or Vercel preview URLs
+// if (
+//   allowedOrigins.includes(origin) ||
+//   /^https:\/\/peasent-pearl-.*\.vercel\.app$/.test(origin) ||
+//   /^https:\/\/pearl-admin-.*\.vercel\.app$/.test(origin)  // ← ADD THIS LINE
+// ) {
+//   return callback(null, true);
+// } {
+//         return callback(null, true);
+//       }
+//       return callback(new Error(`Not allowed by CORS: ${origin}`));
+//     },
+//     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//     allowedHeaders: ['Content-Type', 'Authorization'],
+//     credentials: true,
+//   })
+// );
 app.use(
   cors({
     origin: function (origin, callback) {
       console.log('CORS check for:', origin);
-      // Allow requests with no origin (e.g., Postman, server-side scripts)
-      if (!origin) {
+
+      // Allow requests with no origin (Postman, server-side)
+      if (!origin) return callback(null, true);
+
+      // Check allowed origins
+      if (
+        allowedOrigins.includes(origin) ||
+        /^https:\/\/peasent-pearl-.*\.vercel\.app$/.test(origin) ||
+        /^https:\/\/pearl-admin-.*\.vercel\.app$/.test(origin)
+      ) {
         return callback(null, true);
       }
-      // Allow listed origins or Vercel preview URLs
-if (
-  allowedOrigins.includes(origin) ||
-  /^https:\/\/peasent-pearl-.*\.vercel\.app$/.test(origin) ||
-  /^https:\/\/pearl-admin-.*\.vercel\.app$/.test(origin)  // ← ADD THIS LINE
-) {
-  return callback(null, true);
-} {
-        return callback(null, true);
-      }
+
+      // Otherwise block
       return callback(new Error(`Not allowed by CORS: ${origin}`));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -69,6 +94,8 @@ if (
     credentials: true,
   })
 );
+
+
 app.options('*', cors());
 
 // Body parser
