@@ -3,7 +3,7 @@ import fs from "fs";
 import mongoose from "mongoose";
 import { uploadToB2, getSignedVideoUrl } from "../utils/uploadVideoB2.js"
 import { deleteFromB2 } from "../utils/deleteVideoB2.js";
-import imagekit from "../config/imageKit.js";
+import imagekit from "../config/imagekit.js";
 import sharp from "sharp";
 
 /**

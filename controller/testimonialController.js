@@ -1,4 +1,4 @@
-import imagekit from "../config/imageKit.js";
+import imagekit from "../config/imagekit.js";
 import Testimonial from "../models/testimonialModel.js";
 
 // Helpers

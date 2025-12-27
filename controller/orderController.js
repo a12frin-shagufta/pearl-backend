@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import Order from "../models/orderModel.js";
 import { sendEmail } from "../utils/SendEmail.js";
-import imagekit from "../config/imageKit.js";
+import imagekit from "../config/imagekit.js";
 import mongoose from "mongoose";
 
 
