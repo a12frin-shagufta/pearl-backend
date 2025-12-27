@@ -1,47 +1,78 @@
-import cloudinary from "../config/cloudinary.js";
-
 import productModel from "../models/productModel.js";
 import fs from "fs";
 import mongoose from "mongoose";
 import { uploadToB2, getSignedVideoUrl } from "../utils/uploadVideoB2.js"
 import { deleteFromB2 } from "../utils/deleteVideoB2.js";
+import imagekit from "../config/imageKit.js";
+import sharp from "sharp";
 
 /**
  * Upload helper to Cloudinary
  * - resource_type: "auto" => works for images AND videos
  */
 // controllers/productController.js
-const uploadToCloudinary = async (fileBuffer, fileName, type = "image") => {
-  try {
-    const options = type === "video"
-      ? { resource_type: "video" }
-      : {
-          resource_type: "image",
-          format: "jpg", // convert any image to JPG
-        };
 
-    // Convert buffer to base64 for Cloudinary
-    const b64 = Buffer.from(fileBuffer).toString('base64');
-    let dataURI;
+// const uploadToCloudinary = async (fileBuffer, fileName, type = "image") => {
+//   try {
+//     const options = type === "video"
+//       ? { resource_type: "video" }
+//       : {
+//           resource_type: "image",
+//           format: "jpg", // convert any image to JPG
+//         };
+
+//     // Convert buffer to base64 for Cloudinary
+//     const b64 = Buffer.from(fileBuffer).toString('base64');
+//     let dataURI;
     
-    if (type === 'video') {
-      dataURI = `data:video/mp4;base64,${b64}`;
-    } else {
-      dataURI = `data:image/jpeg;base64,${b64}`;
-    }
+//     if (type === 'video') {
+//       dataURI = `data:video/mp4;base64,${b64}`;
+//     } else {
+//       dataURI = `data:image/jpeg;base64,${b64}`;
+//     }
 
-    const res = await cloudinary.uploader.upload(dataURI, options);
-    console.log("✅ Uploaded to Cloudinary from buffer:", {
-      public_id: res.public_id,
-      type: type,
-      url: res.secure_url.substring(0, 80) + '...'
+//     const res = await cloudinary.uploader.upload(dataURI, options);
+//     console.log("✅ Uploaded to Cloudinary from buffer:", {
+//       public_id: res.public_id,
+//       type: type,
+//       url: res.secure_url.substring(0, 80) + '...'
+//     });
+//     return res.secure_url;
+//   } catch (err) {
+//     console.error("❌ Cloudinary upload error:", err.message);
+//     throw err;
+//   }
+// };
+
+
+const uploadToImageKit = async (fileBuffer, fileName, type = "image") => {
+  try {
+
+    // Optimize image buffer
+    const optimizedBuffer = await sharp(fileBuffer)
+      .rotate()
+      .resize({ width: 1600, withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .withMetadata(false) // strips EXIF
+      .toBuffer();
+
+    const res = await imagekit.upload({
+      file: optimizedBuffer, 
+      fileName: fileName,
+      useUniqueFileName: true,
+      folder: type === "video" ? "videos" : "images",
+      isPrivateFile: false,
     });
-    return res.secure_url;
+
+    console.log("✅ Uploaded to ImageKit - FULL RESPONSE:");
+    
+    return res.url;
   } catch (err) {
-    console.error("❌ Cloudinary upload error:", err.message);
+    console.error("❌ ImageKit upload error:", err.message);
     throw err;
   }
 };
+
 /**
  * Helper: safe file delete
  */
@@ -171,25 +202,49 @@ const addProduct = async (req, res) => {
       console.log(`📦 Processing variant ${i} (${color}):`);
       
       // --- UPLOAD IMAGE TO CLOUDINARY (if exists) ---
+      // if (imageFile) {
+      //   const sizeMB = (imageFile.size / 1024 / 1024).toFixed(1);
+      //   console.log(`  🖼️ Image: "${imageFile.originalname}" (${sizeMB}MB)`);
+        
+      //   try {
+      //     console.log(`  ☁️ Uploading image to Cloudinary...`);
+      //     // ✅ MUST UPDATE uploadToCloudinary function to accept buffer!
+      //     const url = await uploadToCloudinary(
+      //       imageFile.buffer, // ← BUFFER, not path!
+      //       imageFile.originalname,
+      //       "image"
+      //     );
+      //     uploadedByIndex[i].images.push(url);
+      //     console.log(`  ✅ Image uploaded: ${url.substring(0, 80)}...`);
+      //   } catch (error) {
+      //     console.error(`  ❌ Cloudinary upload failed:`, error.message);
+      //     throw new Error(`Image upload failed for color "${color}": ${error.message}`);
+      //   }
+      // }
+
+      // --- UPLOAD IMAGE TO IMAGEKIT (if exists) ---
       if (imageFile) {
         const sizeMB = (imageFile.size / 1024 / 1024).toFixed(1);
         console.log(`  🖼️ Image: "${imageFile.originalname}" (${sizeMB}MB)`);
-        
+
         try {
-          console.log(`  ☁️ Uploading image to Cloudinary...`);
-          // ✅ MUST UPDATE uploadToCloudinary function to accept buffer!
-          const url = await uploadToCloudinary(
-            imageFile.buffer, // ← BUFFER, not path!
-            imageFile.originalname,
+          console.log(`  ☁️ Uploading image to ImageKit...`);
+
+          const imgUrl = await uploadToImageKit(
+            imageFile.buffer,        // ✅ buffer directly
+            imageFile.originalname,  // ✅ filename
             "image"
           );
-          uploadedByIndex[i].images.push(url);
-          console.log(`  ✅ Image uploaded: ${url.substring(0, 80)}...`);
+
+          uploadedByIndex[i].images.push(imgUrl);
+
+          console.log(`  ✅ Image uploaded: ${imgUrl.substring(0, 80)}...`);
         } catch (error) {
-          console.error(`  ❌ Cloudinary upload failed:`, error.message);
+          console.error(`  ❌ ImageKit upload failed:`, error.message);
           throw new Error(`Image upload failed for color "${color}": ${error.message}`);
         }
       }
+
       
       // --- UPLOAD VIDEO TO B2 (if exists) ---
       if (videoFile) {
@@ -380,13 +435,27 @@ const updateProduct = async (req, res) => {
       }
 
       // --------- IMAGE UPLOAD (Cloudinary) ----------
-   const uploadedImageUrls = variantImageEntries.length > 0
-      ? await Promise.all(  // ← FIX: Add await Promise.all()
-          variantImageEntries.map((entry) =>
-            uploadToCloudinary(entry.file.buffer, entry.file.originalname, "image")
+      //  const uploadedImageUrls = variantImageEntries.length > 0
+      //     ? await Promise.all(  // ← FIX: Add await Promise.all()
+      //         variantImageEntries.map((entry) =>
+      //           uploadToCloudinary(entry.file.buffer, entry.file.originalname, "image")
+      //         )
+      //       )
+      //     : [];
+
+      // --------- IMAGE UPLOAD (ImageKit) ----------
+      const uploadedImageUrls = variantImageEntries.length > 0
+        ? await Promise.all(
+            variantImageEntries.map((entry) =>
+              uploadToImageKit(
+                entry.file.buffer,
+                entry.file.originalname,
+                "image"
+              )
+            )
           )
-        )
-      : [];
+        : [];
+
 
       // --------- VIDEO UPLOAD (Backblaze B2) ----------
   if (variantVideoEntries.length > 0) {
@@ -453,9 +522,13 @@ const updateProduct = async (req, res) => {
               }
               
               // Convert old string format to object format
+              // if (typeof v === 'string') {
+              //   return !v.includes('cloudinary.com'); // Skip cloudinary image URLs
+              // }
               if (typeof v === 'string') {
-                return !v.includes('cloudinary.com'); // Skip cloudinary image URLs
+                return true;
               }
+
               
               return v && typeof v === 'object' && v.key;
             }).map(v => {
@@ -985,6 +1058,6 @@ const debugProductVideo = async (req, res) => {
   }
 };
 
-export { addProduct, updateProduct, listProduct, removeProduct, singleProduct , decrementStock, debugProductVideo };
+export { addProduct, updateProduct, listProduct, removeProduct, singleProduct , decrementStock, debugProductVideo, uploadToImageKit };
 
 

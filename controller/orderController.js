@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import Order from "../models/orderModel.js";
 import { sendEmail } from "../utils/SendEmail.js";
-import cloudinary from "../config/cloudinary.js"
+import imagekit from "../config/imageKit.js";
 import mongoose from "mongoose";
 
 
@@ -80,9 +80,65 @@ export const createManualOrder = async (req, res) => {
 
 // Upload proof for order (bank/jazz)
 // controllers/orderController.js
+// export const uploadProof = async (req, res) => {
+//   try {
+//     const { orderId, transactionRef, senderLast4 } = req.body;
+//     if (!req.file) {
+//       return res.status(400).json({ success: false, message: "No file uploaded" });
+//     }
+
+//     const order = await Order.findById(orderId);
+//     if (!order) {
+//       return res.status(404).json({ success: false, message: "Order not found" });
+//     }
+
+//     // Upload to Cloudinary
+//     console.log("[uploadProof] Uploading to Cloudinary:", { orderId, filename: req.file.originalname });
+//     const result = await new Promise((resolve, reject) => {
+//       const stream = cloudinary.uploader.upload_stream(
+//         { resource_type: "auto", folder: "payment_proofs" },
+//         (error, result) => {
+//           if (error) reject(error);
+//           else resolve(result);
+//         }
+//       );
+//       stream.end(req.file.buffer);
+//     });
+
+//     if (!cloudinary?.uploader?.upload_stream) {
+//   console.error("[uploadProof] cloudinary instance invalid:", cloudinary);
+//   return res.status(500).json({ success:false, message:"Cloudinary not initialized" });
+// }
+
+
+//     // Save proof to order
+//     const absoluteUrl = result.secure_url;
+//     order.paymentProofs.push({ url: absoluteUrl, filename: req.file.originalname });
+//     if (transactionRef) order.transactionRef = transactionRef;
+//     if (senderLast4) order.senderLast4 = senderLast4;
+//     if (!order.paymentStatus || order.paymentStatus === "Pending") {
+//       order.paymentStatus = "Pending";
+//     }
+//     await order.save();
+
+//     console.log("[uploadProof] Success:", { fileUrl: absoluteUrl, orderId });
+
+//     return res.json({
+//       success: true,
+//       message: "Proof uploaded",
+//       fileUrl: absoluteUrl,
+//       orderId: order._id,
+//     });
+//   } catch (err) {
+//     console.error("[uploadProof] Error:", err);
+//     return res.status(500).json({ success: false, message: err.message || "Server error" });
+//   }
+// };
+
 export const uploadProof = async (req, res) => {
   try {
     const { orderId, transactionRef, senderLast4 } = req.body;
+
     if (!req.file) {
       return res.status(400).json({ success: false, message: "No file uploaded" });
     }
@@ -92,33 +148,32 @@ export const uploadProof = async (req, res) => {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    // Upload to Cloudinary
-    console.log("[uploadProof] Uploading to Cloudinary:", { orderId, filename: req.file.originalname });
-    const result = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        { resource_type: "auto", folder: "payment_proofs" },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
-        }
-      );
-      stream.end(req.file.buffer);
+    // --- Upload to ImageKit ---
+    console.log("[uploadProof] Uploading to ImageKit:", { orderId, filename: req.file.originalname });
+
+    const result = await imagekit.upload({
+      file: req.file.buffer,            // Buffer directly
+      fileName: req.file.originalname,
+      folder: "payment_proofs",         // same folder as Cloudinary
+      useUniqueFileName: true,
     });
 
-    if (!cloudinary?.uploader?.upload_stream) {
-  console.error("[uploadProof] cloudinary instance invalid:", cloudinary);
-  return res.status(500).json({ success:false, message:"Cloudinary not initialized" });
-}
+    if (!result?.url) {
+      console.error("[uploadProof] ImageKit upload failed:", result);
+      return res.status(500).json({ success: false, message: "ImageKit upload failed" });
+    }
 
+    const absoluteUrl = result.url;
 
-    // Save proof to order
-    const absoluteUrl = result.secure_url;
+    // --- Save proof to order ---
     order.paymentProofs.push({ url: absoluteUrl, filename: req.file.originalname });
+
     if (transactionRef) order.transactionRef = transactionRef;
     if (senderLast4) order.senderLast4 = senderLast4;
     if (!order.paymentStatus || order.paymentStatus === "Pending") {
       order.paymentStatus = "Pending";
     }
+
     await order.save();
 
     console.log("[uploadProof] Success:", { fileUrl: absoluteUrl, orderId });
@@ -129,11 +184,13 @@ export const uploadProof = async (req, res) => {
       fileUrl: absoluteUrl,
       orderId: order._id,
     });
+
   } catch (err) {
     console.error("[uploadProof] Error:", err);
     return res.status(500).json({ success: false, message: err.message || "Server error" });
   }
 };
+
 
 
 // Admin: confirm/reject/mark-half payment

@@ -93,7 +93,7 @@ export const getSignedVideoUrl = async (key, expiresIn = 7 * 24 * 3600) => {
   }
   
   if (key.includes('cloudinary.com')) {
-    throw new Error(`Cloudinary URL passed as video key: ${key.substring(0, 50)}...`);
+    throw new Error(`Skipping old Cloudinary URL: ${key.substring(0, 50)}...`);
   }
   
   try {

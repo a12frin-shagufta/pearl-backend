@@ -1,4 +1,4 @@
-import cloudinary from "cloudinary";
+import imagekit from "../config/imageKit.js";
 import Testimonial from "../models/testimonialModel.js";
 
 // Helpers
@@ -55,6 +55,76 @@ export const getAllTestimonials = async (req, res) => {
   }
 };
 
+// export const createTestimonial = async (req, res) => {
+//   try {
+//     const {
+//       customerName,
+//       headline,
+//       content,
+//       rating,
+//       productId,
+//       productName,
+//       location,
+//       language,
+//       featured,
+//       sortOrder,
+//       published,
+//       mediaMeta, // optional alt/type overrides as JSON array matching uploads order
+//     } = req.body;
+
+//     if (!customerName || !content) {
+//       return res.status(400).json({ message: "customerName and content are required" });
+//     }
+
+//     const files = req.files || {};
+//     const uploads = [];
+
+//     // Avatar (single)
+//     let avatarUrl = "";
+//     if (files.avatar?.[0]) {
+//       const up = await cloudinary.v2.uploader.upload(files.avatar[0].path, { folder: "testimonials" });
+//       avatarUrl = up.secure_url;
+//     }
+
+//     // Media (multiple)
+//     const mediaMetaArr = parseJSON(mediaMeta, []);
+//     if (files.media?.length) {
+//       for (let i = 0; i < files.media.length; i++) {
+//         const file = files.media[i];
+//         const up = await cloudinary.v2.uploader.upload(file.path, { folder: "testimonials" });
+//         const meta = mediaMetaArr[i] || {};
+//         uploads.push({
+//           type: meta.type || (file.mimetype.startsWith("video") ? "video" : "image"),
+//           url: up.secure_url,
+//           alt: meta.alt || "",
+//         });
+//       }
+//     }
+
+//     const doc = await Testimonial.create({
+//       customerName,
+//       headline,
+//       content,
+//       rating: rating ? Number(rating) : undefined,
+//       avatarUrl,
+//       media: uploads,
+//       productId: productId || undefined,
+//       productName,
+//       location,
+//       language: language || "en",
+//       featured: featured === "true" || featured === true,
+//       sortOrder: sortOrder ? Number(sortOrder) : 0,
+//       published: published === "true" || published === true,
+//       publishedAt: (published === "true" || published === true) ? new Date() : undefined,
+//     });
+
+//     res.status(201).json({ message: "Created", data: doc });
+//   } catch (err) {
+//     console.error("createTestimonial error:", err);
+//     res.status(500).json({ message: "Failed to create testimonial" });
+//   }
+// };
+
 export const createTestimonial = async (req, res) => {
   try {
     const {
@@ -79,23 +149,34 @@ export const createTestimonial = async (req, res) => {
     const files = req.files || {};
     const uploads = [];
 
-    // Avatar (single)
+    // --- Avatar (single) ---
     let avatarUrl = "";
     if (files.avatar?.[0]) {
-      const up = await cloudinary.v2.uploader.upload(files.avatar[0].path, { folder: "testimonials" });
-      avatarUrl = up.secure_url;
+      const file = files.avatar[0];
+      const result = await imagekit.upload({
+        file: file.buffer,
+        fileName: file.originalname,
+        folder: "testimonials",
+        useUniqueFileName: true,
+      });
+      avatarUrl = result.url;
     }
 
-    // Media (multiple)
+    // --- Media (multiple) ---
     const mediaMetaArr = parseJSON(mediaMeta, []);
     if (files.media?.length) {
       for (let i = 0; i < files.media.length; i++) {
         const file = files.media[i];
-        const up = await cloudinary.v2.uploader.upload(file.path, { folder: "testimonials" });
+        const result = await imagekit.upload({
+          file: file.buffer,
+          fileName: file.originalname,
+          folder: "testimonials",
+          useUniqueFileName: true,
+        });
         const meta = mediaMetaArr[i] || {};
         uploads.push({
           type: meta.type || (file.mimetype.startsWith("video") ? "video" : "image"),
-          url: up.secure_url,
+          url: result.url,
           alt: meta.alt || "",
         });
       }
@@ -119,11 +200,69 @@ export const createTestimonial = async (req, res) => {
     });
 
     res.status(201).json({ message: "Created", data: doc });
+
   } catch (err) {
     console.error("createTestimonial error:", err);
     res.status(500).json({ message: "Failed to create testimonial" });
   }
 };
+
+
+// export const updateTestimonial = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const body = req.body;
+
+//     const update = {
+//       customerName: body.customerName,
+//       headline: body.headline,
+//       content: body.content,
+//       rating: body.rating ? Number(body.rating) : undefined,
+//       productId: body.productId || undefined,
+//       productName: body.productName,
+//       location: body.location,
+//       language: body.language,
+//       featured: body.featured === "true" || body.featured === true,
+//       sortOrder: body.sortOrder ? Number(body.sortOrder) : 0,
+//     };
+
+//     // Avatar replace
+//     if (req.files?.avatar?.[0]) {
+//       const up = await cloudinary.v2.uploader.upload(req.files.avatar[0].path, { folder: "testimonials" });
+//       update.avatarUrl = up.secure_url;
+//     }
+
+//     // Media append (optional)
+//     const newMedia = [];
+//     if (req.files?.media?.length) {
+//       const mediaMetaArr = parseJSON(body.mediaMeta, []);
+//       for (let i = 0; i < req.files.media.length; i++) {
+//         const f = req.files.media[i];
+//         const up = await cloudinary.v2.uploader.upload(f.path, { folder: "testimonials" });
+//         const meta = mediaMetaArr[i] || {};
+//         newMedia.push({
+//           type: meta.type || (f.mimetype.startsWith("video") ? "video" : "image"),
+//           url: up.secure_url,
+//           alt: meta.alt || "",
+//         });
+//       }
+//     }
+
+//     if (body.keepMedia) {
+//       // keepMedia should be the full media array JSON you want to keep
+//       update.media = parseJSON(body.keepMedia, []);
+//     }
+//     if (newMedia.length) {
+//       update.media = [...(update.media || parseJSON(body.keepMedia, [])), ...newMedia];
+//     }
+
+//     const doc = await Testimonial.findByIdAndUpdate(id, update, { new: true });
+//     res.json({ message: "Updated", data: doc });
+//   } catch (err) {
+//     console.error("updateTestimonial error:", err);
+//     res.status(500).json({ message: "Failed to update testimonial" });
+//   }
+// };
 
 export const updateTestimonial = async (req, res) => {
   try {
@@ -143,30 +282,41 @@ export const updateTestimonial = async (req, res) => {
       sortOrder: body.sortOrder ? Number(body.sortOrder) : 0,
     };
 
-    // Avatar replace
+    // --- Avatar replace ---
     if (req.files?.avatar?.[0]) {
-      const up = await cloudinary.v2.uploader.upload(req.files.avatar[0].path, { folder: "testimonials" });
-      update.avatarUrl = up.secure_url;
+      const file = req.files.avatar[0];
+      const result = await imagekit.upload({
+        file: file.buffer,
+        fileName: file.originalname,
+        folder: "testimonials",
+        useUniqueFileName: true,
+      });
+      update.avatarUrl = result.url;
     }
 
-    // Media append (optional)
+    // --- Media append (optional) ---
     const newMedia = [];
     if (req.files?.media?.length) {
       const mediaMetaArr = parseJSON(body.mediaMeta, []);
       for (let i = 0; i < req.files.media.length; i++) {
         const f = req.files.media[i];
-        const up = await cloudinary.v2.uploader.upload(f.path, { folder: "testimonials" });
+        const result = await imagekit.upload({
+          file: f.buffer,
+          fileName: f.originalname,
+          folder: "testimonials",
+          useUniqueFileName: true,
+        });
         const meta = mediaMetaArr[i] || {};
         newMedia.push({
           type: meta.type || (f.mimetype.startsWith("video") ? "video" : "image"),
-          url: up.secure_url,
+          url: result.url,
           alt: meta.alt || "",
         });
       }
     }
 
+    // --- Merge with existing media if keepMedia provided ---
     if (body.keepMedia) {
-      // keepMedia should be the full media array JSON you want to keep
       update.media = parseJSON(body.keepMedia, []);
     }
     if (newMedia.length) {
@@ -175,11 +325,13 @@ export const updateTestimonial = async (req, res) => {
 
     const doc = await Testimonial.findByIdAndUpdate(id, update, { new: true });
     res.json({ message: "Updated", data: doc });
+    
   } catch (err) {
     console.error("updateTestimonial error:", err);
     res.status(500).json({ message: "Failed to update testimonial" });
   }
 };
+
 
 export const toggleStatus = async (req, res) => {
   try {
