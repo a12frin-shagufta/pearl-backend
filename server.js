@@ -69,6 +69,7 @@ if (
     credentials: true,
   })
 );
+app.options('*', cors());
 
 // Body parser
 app.use(express.json({ limit: '200mb' }));
