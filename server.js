@@ -16,7 +16,8 @@ import videoRouter from "./routes/videoRoute.js"
 const app = express();
 const port = process.env.PORT || 3000;
 import mongoose from 'mongoose';
-import imagekit from './config/imageKit.js';
+import imagekit from './config/imagekit.js';
+
 
 
 const __filename = fileURLToPath(import.meta.url);
