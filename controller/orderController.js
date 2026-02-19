@@ -6,24 +6,34 @@ import { sendEmail } from "../utils/SendEmail.js";
 import imagekit from "../config/imagekit.js";
 import mongoose from "mongoose";
 
-
-
 // Create manual order
 // Create manual order
 export const createManualOrder = async (req, res) => {
   try {
     const {
-      name, phone, email, address, city, state, note,
-      paymentMethod, items, subtotal, shipping, total,
-      advanceRequired, transactionRef, senderLast4, paymentInstructions,
-      
+      name,
+      phone,
+      email,
+      address,
+      city,
+      state,
+      note,
+      paymentMethod,
+      items,
+      subtotal,
+      shipping,
+      total,
+      advanceRequired,
+      transactionRef,
+      senderLast4,
+      paymentInstructions,
     } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ success: false, message: "Cart empty" });
     }
 
-    const safeItems = items.map(it => ({
+    const safeItems = items.map((it) => ({
       productId: it.productId,
       key: it.key,
       name: it.name,
@@ -33,15 +43,24 @@ export const createManualOrder = async (req, res) => {
       quantity: Number(it.quantity || 0),
       unitPrice: Number(it.unitPrice || 0),
       total: Number(it.total || 0),
-       engravingFirstName: (it.engravingFirstName || "").trim(),
-       engravingLastName:  (it.engravingLastName  || "").trim(),
+      engravingFirstName: (it.engravingFirstName || "").trim(),
+      engravingLastName: (it.engravingLastName || "").trim(),
     }));
 
     const order = new Order({
-      name, phone, email, address, city, state, note,
+      name,
+      phone,
+      email,
+      address,
+      city,
+      state,
+      note,
       items: safeItems,
-      subtotal, shipping, total,
-      transactionRef, senderLast4,
+      subtotal,
+      shipping,
+      total,
+      transactionRef,
+      senderLast4,
       advanceRequired,
       paymentMethod: paymentMethod || "cod",
       paymentInstructions: paymentInstructions || {},
@@ -55,12 +74,15 @@ export const createManualOrder = async (req, res) => {
       to: email,
       subject: "Order Confirmation",
       html: `
-        <h2>Thank you for your order!</h2>
+        <h2 style="text-align: center;">Your order is confirmed</h2>
+        <p style="text-align: center;">Hey! we've received your order and we are on it. You'll receive your order in 11-14 working days based on your location and order</p>
+        <h3 style="text-align: center;">Wondering what happens next?</h3>
+        <p style="text-align: center;">As soon as we verify your payment, you'll receive another confirmation email about your order. In case you have any questions, you can reach out to us via sending us a message to our Whatsapp number</p>
+        <div style="border-bottom: 2px solid #ffffff; text-align: center; align-items: center;"></div>
         <p>Order ID: <strong>${order._id}</strong></p>
         <p>Total: ${order.total}</p>
-        <p>We will contact you soon to confirm your payment.</p>
-      `
-    }).catch(err => {
+      `,
+    }).catch((err) => {
       console.error("sendEmail error:", err.message);
     });
 
@@ -68,15 +90,13 @@ export const createManualOrder = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Order created",
-      orderId: order._id
+      orderId: order._id,
     });
-
   } catch (err) {
     console.error("create-manual error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 
 // Upload proof for order (bank/jazz)
 // controllers/orderController.js
@@ -110,7 +130,6 @@ export const createManualOrder = async (req, res) => {
 //   return res.status(500).json({ success:false, message:"Cloudinary not initialized" });
 // }
 
-
 //     // Save proof to order
 //     const absoluteUrl = result.secure_url;
 //     order.paymentProofs.push({ url: absoluteUrl, filename: req.file.originalname });
@@ -140,33 +159,45 @@ export const uploadProof = async (req, res) => {
     const { orderId, transactionRef, senderLast4 } = req.body;
 
     if (!req.file) {
-      return res.status(400).json({ success: false, message: "No file uploaded" });
+      return res
+        .status(400)
+        .json({ success: false, message: "No file uploaded" });
     }
 
     const order = await Order.findById(orderId);
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
     }
 
     // --- Upload to ImageKit ---
-    console.log("[uploadProof] Uploading to ImageKit:", { orderId, filename: req.file.originalname });
+    console.log("[uploadProof] Uploading to ImageKit:", {
+      orderId,
+      filename: req.file.originalname,
+    });
 
     const result = await imagekit.upload({
-      file: req.file.buffer,            // Buffer directly
+      file: req.file.buffer, // Buffer directly
       fileName: req.file.originalname,
-      folder: "payment_proofs",         // same folder as Cloudinary
+      folder: "payment_proofs", // same folder as Cloudinary
       useUniqueFileName: true,
     });
 
     if (!result?.url) {
       console.error("[uploadProof] ImageKit upload failed:", result);
-      return res.status(500).json({ success: false, message: "ImageKit upload failed" });
+      return res
+        .status(500)
+        .json({ success: false, message: "ImageKit upload failed" });
     }
 
     const absoluteUrl = result.url;
 
     // --- Save proof to order ---
-    order.paymentProofs.push({ url: absoluteUrl, filename: req.file.originalname });
+    order.paymentProofs.push({
+      url: absoluteUrl,
+      filename: req.file.originalname,
+    });
 
     if (transactionRef) order.transactionRef = transactionRef;
     if (senderLast4) order.senderLast4 = senderLast4;
@@ -184,41 +215,47 @@ export const uploadProof = async (req, res) => {
       fileUrl: absoluteUrl,
       orderId: order._id,
     });
-
   } catch (err) {
     console.error("[uploadProof] Error:", err);
-    return res.status(500).json({ success: false, message: err.message || "Server error" });
+    return res
+      .status(500)
+      .json({ success: false, message: err.message || "Server error" });
   }
 };
-
-
 
 // Admin: confirm/reject/mark-half payment
 // controllers/orderController.js (replace adminUpdatePayment)
 // controllers/orderController.js
 // controllers/orderController.js
 
-
 export const adminUpdatePayment = async (req, res) => {
   try {
     const orderId = String(req.body.orderId || "").trim();
-    const action  = String(req.body.action  || "").trim();
-    const reason  = typeof req.body.reason === "string" ? req.body.reason.trim() : "";
+    const action = String(req.body.action || "").trim();
+    const reason =
+      typeof req.body.reason === "string" ? req.body.reason.trim() : "";
 
     // Basic validation
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ success: false, message: "Invalid orderId" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid orderId" });
     }
     if (!["confirm", "reject", "mark-half"].includes(action)) {
-      return res.status(400).json({ success: false, message: "Invalid action" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid action" });
     }
 
     const order = await Order.findById(orderId);
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (!order)
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
 
     // who did it (if your auth middleware sets user/admin)
-    const adminId   = (req.user?.id) || (req.admin?.id) || req.userId || "system";
-    const adminName = (req.user?.name) || (req.admin?.name) || "Admin";
+    const adminId = req.user?.id || req.admin?.id || req.userId || "system";
+    const adminName = req.user?.name || req.admin?.name || "Admin";
 
     // Apply action
     let emailSubject = "";
@@ -226,38 +263,49 @@ export const adminUpdatePayment = async (req, res) => {
 
     if (action === "confirm") {
       order.paymentStatus = "Paid";
-      order.advancePaid   = order.advanceRequired || order.total || 0;
+      order.advancePaid = order.advanceRequired || order.total || 0;
 
       emailSubject = "Order Accepted — Payment confirmed";
       emailHtml = `
-        <h3>Order Accepted</h3>
+        <h2 style="text-align: center;">Payment Successful</h2>
         <p>Dear ${order.name || "Customer"},</p>
-        <p>Your payment for Order <strong>${order._id}</strong> has been verified.</p>
+        <p style="text-align: center;">We have successfully received your payment. Thank you for placing your trust in us. Our team has begun working on your order, and you will receive a photo of your item for approval before it is dispatched.Your COD amount will be zero. <br/> <br/> If you have any queries or want any changes in your order then please contact us on WhatsApp by providing us the name you placed your order with.</p>
+        <p>Your payment for Order <strong>${
+          order._id
+        }</strong> has been verified.</p>
         <p><strong>Amount received:</strong> ${order.advancePaid ?? "—"}</p>
       `;
     } else if (action === "mark-half") {
       order.paymentStatus = "Half Paid";
-      order.advancePaid   = order.advanceRequired || Math.round((order.total || 0) / 2);
-      const remaining     = (order.total || 0) - (order.advancePaid || 0);
+      order.advancePaid =
+        order.advanceRequired || Math.round((order.total || 0) / 2);
+      const remaining = (order.total || 0) - (order.advancePaid || 0);
 
       emailSubject = "Deposit Received — Order Confirmed";
       emailHtml = `
         <h3>Deposit Received</h3>
         <p>Dear ${order.name || "Customer"},</p>
+        <p style="text-align: center;">We have successfully received your payment. Thank you for placing your trust in us. Our team has begun working on your order, and you will receive a photo of your item for approval before it is dispatched. Your other half payment will be on COD. <br/> <br/> If you have any queries or want any changes in your order then please contact us on WhatsApp by providing us the name you placed your order with.</p>
         <p>We received your deposit for Order <strong>${order._id}</strong>.</p>
-        <p><strong>Deposit:</strong> ${order.advancePaid} — <strong>Remaining COD:</strong> ${remaining}</p>
+        <p><strong>Deposit:</strong> ${
+          order.advancePaid
+        } — <strong>Remaining COD:</strong> ${remaining}</p>
       `;
     } else if (action === "reject") {
       order.paymentStatus = "Rejected";
       if (reason) {
-        order.note = (order.note ? order.note + "\n\n" : "") + `Admin rejection reason: ${reason}`;
+        order.note =
+          (order.note ? order.note + "\n\n" : "") +
+          `Admin rejection reason: ${reason}`;
       }
 
       emailSubject = "Payment Rejected — Please Try Again";
       emailHtml = `
         <h3>Payment Rejected</h3>
         <p>Dear ${order.name || "Customer"},</p>
-        <p>We found an issue while verifying your payment for Order <strong>${order._id}</strong>.</p>
+        <p>We found an issue while verifying your payment for Order <strong>${
+          order._id
+        }</strong>.</p>
         ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
       `;
     }
@@ -276,9 +324,16 @@ export const adminUpdatePayment = async (req, res) => {
     // Fire-and-forget emails (don’t block the response)
     (async () => {
       try {
-        await sendEmail({ to: order.email, subject: emailSubject, html: emailHtml });
+        await sendEmail({
+          to: order.email,
+          subject: emailSubject,
+          html: emailHtml,
+        });
       } catch (e) {
-        console.error("adminUpdatePayment: customer email failed:", e?.message || e);
+        console.error(
+          "adminUpdatePayment: customer email failed:",
+          e?.message || e
+        );
       }
 
       if (process.env.ADMIN_EMAIL) {
@@ -287,12 +342,17 @@ export const adminUpdatePayment = async (req, res) => {
             to: process.env.ADMIN_EMAIL,
             subject: `Admin action ${action} — Order ${order._id}`,
             html: `
-              <p>${adminName} performed <strong>${action}</strong> on Order <strong>${order._id}</strong>.</p>
+              <p>${adminName} performed <strong>${action}</strong> on Order <strong>${
+              order._id
+            }</strong>.</p>
               ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
             `,
           });
         } catch (e) {
-          console.error("adminUpdatePayment: admin email failed:", e?.message || e);
+          console.error(
+            "adminUpdatePayment: admin email failed:",
+            e?.message || e
+          );
         }
       }
     })();
@@ -310,31 +370,45 @@ export const adminUpdatePayment = async (req, res) => {
   }
 };
 
-
-
 // Ask customer to re-upload payment proof
 export const requestProofAgain = async (req, res) => {
   try {
     const orderId = String(req.body.orderId || "").trim();
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ success: false, message: "Invalid orderId" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid orderId" });
     }
 
     const order = await Order.findById(orderId).lean();
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
-    if (!order.email) return res.status(400).json({ success: false, message: "No customer email on file" });
+    if (!order)
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+    if (!order.email)
+      return res
+        .status(400)
+        .json({ success: false, message: "No customer email on file" });
 
     // Where should the customer upload proof?
     // FRONTEND_URL: e.g. https://pleasantpearl.com
     // Your frontend must have a page/route that lets them upload by orderId
-    const base = process.env.CUSTOMER_PORTAL_URL || process.env.SITE_URL || process.env.FRONTEND_URL || "";
-    const uploadLink = `${base.replace(/\/+$/,"")}/upload-proof?order=${order._id}`;
+    const base =
+      process.env.CUSTOMER_PORTAL_URL ||
+      process.env.SITE_URL ||
+      process.env.FRONTEND_URL ||
+      "";
+    const uploadLink = `${base.replace(/\/+$/, "")}/upload-proof?order=${
+      order._id
+    }`;
 
     const subject = "Action Needed: Please upload your payment proof";
     const html = `
       <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif">
         <h2>Hi ${order.name || "there"},</h2>
-        <p>We couldn’t verify the payment proof for your order <strong>${order._id}</strong>.</p>
+        <p>We couldn’t verify the payment proof for your order <strong>${
+          order._id
+        }</strong>.</p>
         <p>Please upload the payment screenshot or PDF again using the secure link below:</p>
         <p><a href="${uploadLink}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#0ea5e9;color:#fff;text-decoration:none">Upload payment proof</a></p>
         <p>If the button doesn’t work, copy & paste this link:<br>
@@ -344,28 +418,35 @@ export const requestProofAgain = async (req, res) => {
     `;
 
     // Fire-and-forget email
-    sendEmail({ to: order.email, subject, html })
-      .catch(e => console.error("[requestProofAgain] sendEmail failed:", e?.message || e));
+    sendEmail({ to: order.email, subject, html }).catch((e) =>
+      console.error("[requestProofAgain] sendEmail failed:", e?.message || e)
+    );
 
     // Optional: log to history in DB
     await Order.updateOne(
       { _id: orderId },
-      { $push: { actionsHistory: {
-        action: "request-proof-again",
-        adminId: (req.user?.id) || (req.admin?.id) || req.userId || "system",
-        adminName: (req.user?.name) || (req.admin?.name) || "Admin",
-        at: new Date()
-      }}}
+      {
+        $push: {
+          actionsHistory: {
+            action: "request-proof-again",
+            adminId: req.user?.id || req.admin?.id || req.userId || "system",
+            adminName: req.user?.name || req.admin?.name || "Admin",
+            at: new Date(),
+          },
+        },
+      }
     );
 
-    return res.json({ success: true, message: "Request sent to customer", uploadLink });
+    return res.json({
+      success: true,
+      message: "Request sent to customer",
+      uploadLink,
+    });
   } catch (err) {
     console.error("requestProofAgain error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
-
 
 // Get all orders (for admin)
 export const getAllOrders = async (req, res) => {
